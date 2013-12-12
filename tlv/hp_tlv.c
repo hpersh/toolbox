@@ -17,10 +17,10 @@ enum {
 };
 
 
-static void *
+static struct hp_tlv_node *
 tlv_node_new(enum hp_tlv_type type)
 {
-  void *result;
+  struct hp_tlv_node *result;
 
   if (result = CALLOC_T(struct hp_tlv_node, 1)) {
     HP_LIST_INIT(result->siblings);
