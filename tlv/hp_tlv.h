@@ -1,6 +1,8 @@
 #ifndef __HP_TLV_H
 #define __HP_TLV_H
 
+#include "hp_tlv_cfg.h"
+
 enum hp_tlv_type {
   HP_TLV_TYPE_NIL,
   HP_TLV_TYPE_BOOL,
@@ -10,12 +12,6 @@ enum hp_tlv_type {
   HP_TLV_TYPE_BYTES,
   HP_TLV_TYPE_LIST
 };
-
-typedef int    hp_tlv_intval;
-typedef double hp_tlv_floatval;
-
-#define HP_TLV_FMT_INT    "%d"
-#define HP_TLV_FMT_FLOAT  "%lg"
 
 struct hp_tlv_node {
   struct hp_tlv_node *parent;
@@ -41,11 +37,6 @@ void               hp_tlv_node_delete(struct hp_tlv_node *nd);
 struct hp_tlv_node *hp_tlv_node_child_insert(struct hp_tlv_node *nd, struct hp_tlv_node *parent, struct hp_list *before);
 struct hp_tlv_node *hp_tlv_node_child_append(struct hp_tlv_node *nd, struct hp_tlv_node *parent);
 struct hp_tlv_node *hp_tlv_node_erase(struct hp_tlv_node *nd);
-
-enum {
-  HP_TLV_HDR_TYPE_BITS = 4,	/* TLV header type field length, in bits */
-  HP_TLV_HDR_LEN_BITS  = 8	/* TLV length type field length, in bits */
-};
 
 struct hp_tlv_stream {
   unsigned char *buf;

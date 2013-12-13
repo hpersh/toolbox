@@ -6,7 +6,7 @@
 
 #include "common/hp_common.h"
 #include "list/hp_list.h"
-#include "tlv/hp_tlv.h"
+#include "hp_tlv.h"
 
 
 #define BITS_TO_CHARS(x)  (((x) + 3) / 4)
