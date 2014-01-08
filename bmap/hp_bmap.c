@@ -2,14 +2,13 @@
 #include <string.h>
 
 #include "hp_bmap.h"
-
-#ifdef __UNIT_TEST__
-#include <assert.h>
-#define ASSERT  assert
-#else
 #include "assert/hp_assert.h"
-#define ASSERT  hp_assert
-#endif
+
+#define HP_BMAP_UNIT_BITS          (1 << HP_BMAP_UNIT_BITS_LOG2)
+#define HP_BMAP_BIT_IDX_TO_UNIT_IDX(i)  ((i) >> HP_BMAP_UNIT_BITS_LOG2)
+#define HP_BMAP_BIT_IDX_TO_UNIT_SH(i)   ((i) & (HP_BMAP_UNIT_BITS - 1))
+#define HP_BMAP_BITS_TO_UNITS(n)   (HP_BMAP_BIT_IDX_TO_UNIT_IDX((n) - 1) + 1)
+#define HP_BMAP_UNITS_TO_BYTES(n)  ((n) * sizeof(HP_BMAP_UNIT))
 
 
 hp_bmap_p
@@ -58,10 +57,10 @@ hp_bmap_new(struct hp_bmap * const bm, unsigned size)
 
 
 static void
-bmap_get(unsigned to_size, HP_BMAP_UNIT * const to_data, unsigned ofs, unsigned len, unsigned from_size, const HP_BMAP_UNIT * const from_data)
+bmap_get(unsigned to_size, HP_BMAP_UNIT *to_data, unsigned ofs, unsigned len, unsigned from_size, const HP_BMAP_UNIT *from_data)
 {
-    unsigned  sh, r;
-    HP_BMAP_UNIT *p;
+    unsigned           sh, r;
+    const HP_BMAP_UNIT *p;
 
     ASSERT((ofs + len) <= from_size);
     ASSERT(len <= to_size);
@@ -171,54 +170,3 @@ hp_bmap_data_size(const struct hp_bmap * const bm)
 {
   return (HP_BMAP_BITS_TO_UNITS(bm->size));
 }
-
-
-#ifdef __UNIT_TEST__
-
-#include <stdio.h>
-
-#define PRINT_EXPR(f, x)  printf("%s = " f "\n", #x, (x))
-
-void
-hp_bmap_print(const struct hp_bmap * const bm)
-{
-  HP_BMAP_UNIT *p;
-  unsigned  n;
-
-  for (p = hp_bmap_data(bm), n = hp_bmap_data_size(bm); n; --n, ++p) {
-    printf("%08x\n", *p);
-  }
-}
-
-int
-main(void)
-{
-  hp_bmap bm1;
-
-  printf("----------\n");
-
-  hp_bmap_new(bm1, 128);
-
-  hp_bmap_print(bm1);
-
-  printf("----------\n");
-
-  hp_bmap_set32(bm1, 0, 5, 0x55);
-
-  hp_bmap_print(bm1);
-
-  printf("----------\n");
-
-  hp_bmap_set32(bm1, 33, 8, 0xff);
-
-  hp_bmap_print(bm1);
-
-
-  PRINT_EXPR("%x", hp_bmap_get32(bm1, 1, 5));
-
-  hp_bmap_free(bm1);
-
-  return (0);
-}
-
-#endif
