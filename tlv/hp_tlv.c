@@ -57,13 +57,55 @@ hp_tlv_node_new(enum hp_tlv_type type, ...)
       result->val.strval = strdup(va_arg(ap, char *));
       break;
     case HP_TLV_TYPE_BYTES:
-      result->val.bytesval.bytes_len = va_arg(ap, unsigned);
-      if ((result->val.bytesval.bytes = malloc(result->val.bytesval.bytes_len)) == 0) {
+      result->val.bytesval.len = va_arg(ap, unsigned);
+      if ((result->val.bytesval.data = malloc(result->val.bytesval.len)) == 0) {
 	free(result);
 	result = 0;
       }
 
-      memcpy(result->val.bytesval.bytes, va_arg(ap, unsigned char *), result->val.bytesval.bytes_len);
+      memcpy(result->val.bytesval.data, va_arg(ap, unsigned char *), result->val.bytesval.len);
+      break;
+    case HP_TLV_TYPE_WORDS:
+      {
+	unsigned n;
+
+	result->val.wordsval.len = va_arg(ap, unsigned);
+	n = result->val.wordsval.len << 1;
+	if ((result->val.wordsval.data = malloc(n)) == 0) {
+	  free(result);
+	  result = 0;
+	}
+	
+	memcpy(result->val.wordsval.data, va_arg(ap, unsigned char *), n);
+      }
+      break;
+    case HP_TLV_TYPE_DWORDS:
+      {
+	unsigned n;
+
+	result->val.dwordsval.len = va_arg(ap, unsigned);
+	n = result->val.dwordsval.len << 2;
+	if ((result->val.dwordsval.data = malloc(n)) == 0) {
+	  free(result);
+	  result = 0;
+	}
+	
+	memcpy(result->val.dwordsval.data, va_arg(ap, unsigned char *), n);
+      }
+      break;
+    case HP_TLV_TYPE_QWORDS:
+      {
+	unsigned n;
+
+	result->val.qwordsval.len = va_arg(ap, unsigned);
+	n = result->val.qwordsval.len << 3;
+	if ((result->val.qwordsval.data = malloc(n)) == 0) {
+	  free(result);
+	  result = 0;
+	}
+	
+	memcpy(result->val.qwordsval.data, va_arg(ap, unsigned char *), n);
+      }
       break;
     case HP_TLV_TYPE_LIST:
       HP_LIST_INIT(result->val.listval);
@@ -92,7 +134,16 @@ hp_tlv_node_delete(struct hp_tlv_node *nd)
     free(nd->val.strval);
     break;
   case HP_TLV_TYPE_BYTES:
-    free(nd->val.bytesval.bytes);
+    free(nd->val.bytesval.data);
+    break;
+  case HP_TLV_TYPE_WORDS:
+    free(nd->val.wordsval.data);
+    break;
+  case HP_TLV_TYPE_DWORDS:
+    free(nd->val.dwordsval.data);
+    break;
+  case HP_TLV_TYPE_QWORDS:
+    free(nd->val.qwordsval.data);
     break;
   case HP_TLV_TYPE_LIST:
     {
@@ -298,12 +349,63 @@ int
 hp_tlv_tostring_bytes(struct hp_tlv_stream *st, unsigned bytes_len, unsigned char *bytes)
 {
   unsigned data_len = 2 * bytes_len;
-  char     data_buf[3], *p;
+  char     data_buf[2 + 1], *p;
 
   if (tlv_hdr_put(st, HP_TLV_TYPE_BYTES, data_len) < 0)  return (-1);
   for (p = tlv_stream_ptr(st); bytes_len; --bytes_len, ++bytes, p += 2) {
     sprintf(data_buf, "%02x", *bytes);
     memcpy(p, data_buf, 2);
+  }
+  tlv_stream_adv(st, data_len);
+
+  return (0);  
+}
+
+
+int
+hp_tlv_tostring_words(struct hp_tlv_stream *st, unsigned words_len, unsigned short *words)
+{
+  unsigned data_len = 4 * words_len;
+  char     data_buf[4 + 1], *p;
+
+  if (tlv_hdr_put(st, HP_TLV_TYPE_WORDS, data_len) < 0)  return (-1);
+  for (p = tlv_stream_ptr(st); words_len; --words_len, ++words, p += 4) {
+    sprintf(data_buf, "%04x", *words);
+    memcpy(p, data_buf, 4);
+  }
+  tlv_stream_adv(st, data_len);
+
+  return (0);  
+}
+
+
+int
+hp_tlv_tostring_dwords(struct hp_tlv_stream *st, unsigned dwords_len, unsigned long *dwords)
+{
+  unsigned data_len = 8 * dwords_len;
+  char     data_buf[8 + 1], *p;
+
+  if (tlv_hdr_put(st, HP_TLV_TYPE_DWORDS, data_len) < 0)  return (-1);
+  for (p = tlv_stream_ptr(st); dwords_len; --dwords_len, ++dwords, p += 8) {
+    sprintf(data_buf, "%08lx", *dwords);
+    memcpy(p, data_buf, 8);
+  }
+  tlv_stream_adv(st, data_len);
+
+  return (0);  
+}
+
+
+int
+hp_tlv_tostring_qwords(struct hp_tlv_stream *st, unsigned qwords_len, unsigned long long *qwords)
+{
+  unsigned data_len = 16 * qwords_len;
+  char     data_buf[16 + 1], *p;
+
+  if (tlv_hdr_put(st, HP_TLV_TYPE_QWORDS, data_len) < 0)  return (-1);
+  for (p = tlv_stream_ptr(st); qwords_len; --qwords_len, ++qwords, p += 16) {
+    sprintf(data_buf, "%016llx", *qwords);
+    memcpy(p, data_buf, 16);
   }
   tlv_stream_adv(st, data_len);
 
@@ -350,7 +452,13 @@ hp_tlv_tostring(struct hp_tlv_stream *st, struct hp_tlv_node *nd)
   case HP_TLV_TYPE_STRING:
     return (hp_tlv_tostring_string(st, nd->val.strval));
   case HP_TLV_TYPE_BYTES:
-    return (hp_tlv_tostring_bytes(st, nd->val.bytesval.bytes_len, nd->val.bytesval.bytes));
+    return (hp_tlv_tostring_bytes(st, nd->val.bytesval.len, nd->val.bytesval.data));
+  case HP_TLV_TYPE_WORDS:
+    return (hp_tlv_tostring_words(st, nd->val.wordsval.len, nd->val.wordsval.data));
+  case HP_TLV_TYPE_DWORDS:
+    return (hp_tlv_tostring_dwords(st, nd->val.dwordsval.len, nd->val.dwordsval.data));
+  case HP_TLV_TYPE_QWORDS:
+    return (hp_tlv_tostring_qwords(st, nd->val.qwordsval.len, nd->val.qwordsval.data));
   case HP_TLV_TYPE_LIST:
     {
       hp_tlv_stream  sub;
@@ -423,45 +531,99 @@ hp_tlv_parse_sax_float(unsigned data_len, char *data, hp_tlv_floatval *val)
 
 
 int
-hp_tlv_parse_sax_string(unsigned data_len, char *data, char **val)
+hp_tlv_parse_sax_string(unsigned data_len, char *data, unsigned strbuf_size, char *strbuf)
 {
-  char               *s;
-  struct hp_tlv_node *p;
+  if ((data_len + 1) > strbuf_size)  return (-1);
 
-  if ((s = (char *) malloc(data_len + 1)) == 0)  return (-1);
-
-  memcpy(s, data, data_len);
-  s[data_len] = 0;
-
-  *val = s;
+  memcpy(strbuf, data, data_len);
+  strbuf[data_len] = 0;
 
   return (0);
 }
 
 
 int
-hp_tlv_parse_sax_bytes(unsigned data_len, char *data, unsigned *bytes_len, unsigned char **bytes)
+hp_tlv_parse_sax_bytes(unsigned data_len, char *data, unsigned bytes_size, unsigned char *bytes)
 {
-  unsigned      n, val;
-  unsigned char *p;
-  char          data_buf[3];
+  unsigned n, nn, val;
+  char     data_buf[2 + 1];
 
   if ((data_len & 1) == 1)  return (-1);
 
-  *bytes_len = n = data_len / 2;
-  if ((*bytes = p = (unsigned char *) malloc(*bytes_len)) == 0)  return (-1);
+  n = data_len >> 1;
+  if (n > bytes_size)  return (-1);
 
-  for (data_buf[2] = 0; n; --n, ++p, data += 2) {
+  for (data_buf[2] = 0, nn = n; nn; --nn, ++bytes, data += 2) {
     memcpy(data_buf, data, 2);
-    if (sscanf(data_buf, "%02x", &val) != 1)  goto err;
-    *p = val;
+    if (sscanf(data_buf, "%02x", &val) != 1)  return (-1);
+    *bytes = val;
   }
 
-  return (0);
+  return (n);
+}
 
- err:
-  free(*bytes);
-  return (-1);
+
+int
+hp_tlv_parse_sax_words(unsigned data_len, char *data, unsigned words_size, unsigned short *words)
+{
+  unsigned n, nn, val;
+  char     data_buf[4 + 1];
+
+  if ((data_len & 1) == 1)  return (-1);
+
+  n = data_len >> 2;
+  if (n > words_size)  return (-1);
+
+  for (data_buf[4] = 0, nn = n; nn; --nn, ++words, data += 4) {
+    memcpy(data_buf, data, 4);
+    if (sscanf(data_buf, "%04x", &val) != 1)  return (-1);
+    *words = val;
+  }
+
+  return (n);
+}
+
+
+int
+hp_tlv_parse_sax_dwords(unsigned data_len, char *data, unsigned dwords_size, unsigned long *dwords)
+{
+  unsigned n, nn, val;
+  char     data_buf[8 + 1];
+
+  if ((data_len & 1) == 1)  return (-1);
+
+  n = data_len >> 3;
+  if (n > dwords_size)  return (-1);
+
+  for (data_buf[8] = 0, nn = n; nn; --nn, ++dwords, data += 8) {
+    memcpy(data_buf, data, 8);
+    if (sscanf(data_buf, "%08x", &val) != 1)  return (-1);
+    *dwords = val;
+  }
+
+  return (n);
+}
+
+
+int
+hp_tlv_parse_sax_qwords(unsigned data_len, char *data, unsigned qwords_size, unsigned long long *qwords)
+{
+  unsigned           n, nn;
+  unsigned long long val;
+  char               data_buf[16 + 1];
+
+  if ((data_len & 1) == 1)  return (-1);
+
+  n = data_len >> 4;
+  if (n > qwords_size)  return (-1);
+
+  for (data_buf[16] = 0, nn = n; nn; --nn, ++qwords, data += 16) {
+    memcpy(data_buf, data, 16);
+    if (sscanf(data_buf, "%016llx", &val) != 1)  return (-1);
+    *qwords = val;
+  }
+
+  return (n);
 }
 
 
@@ -510,29 +672,95 @@ hp_tlv_parse_dom(struct hp_tlv_stream *st, struct hp_tlv_node **nd)
 
   case HP_TLV_TYPE_STRING:
     {
-      char               *val;
+      unsigned           bufsize;
+      char               *buf;
       struct hp_tlv_node *p;
 
-      if (hp_tlv_parse_sax_string(data_len, data, &val) < 0)  return (-1);
+      bufsize = data_len + 1;
+      buf     = malloc(bufsize);
+      if (buf == 0)  return (-1);
+
+      if (hp_tlv_parse_sax_string(data_len, data, bufsize, buf) < 0)  return (-1);
 
       *nd = p = tlv_node_new(type);
 
-      p->val.strval = val;
+      p->val.strval = buf;
     }
     break;
 
   case HP_TLV_TYPE_BYTES:
     {
-      unsigned           bytes_len;
-      unsigned char      *bytes;
+      unsigned           bufsize;
+      unsigned char      *buf;
       struct hp_tlv_node *p;
     
-      if (hp_tlv_parse_sax_bytes(data_len, data, &bytes_len, &bytes) < 0)  return (-1);
+      bufsize = data_len >> 1;
+      buf = malloc(bufsize);
+      if (buf == 0)  return (-1);
+
+      if (hp_tlv_parse_sax_bytes(data_len, data, bufsize, buf) < 0)  return (-1);
 
       *nd = p = tlv_node_new(type);
 
-      p->val.bytesval.bytes_len = bytes_len;
-      p->val.bytesval.bytes     = bytes;
+      p->val.bytesval.len  = bufsize;
+      p->val.bytesval.data = buf;
+    }
+    break;
+
+  case HP_TLV_TYPE_WORDS:
+    {
+      unsigned           bufsize;
+      unsigned short     *buf;
+      struct hp_tlv_node *p;
+    
+      bufsize = data_len >> 2;
+      buf = malloc(bufsize << 1);
+      if (buf == 0)  return (-1);
+
+      if (hp_tlv_parse_sax_words(data_len, data, bufsize, buf) < 0)  return (-1);
+
+      *nd = p = tlv_node_new(type);
+
+      p->val.wordsval.len  = bufsize;
+      p->val.wordsval.data = buf;
+    }
+    break;
+
+  case HP_TLV_TYPE_DWORDS:
+    {
+      unsigned           bufsize;
+      unsigned long      *buf;
+      struct hp_tlv_node *p;
+    
+      bufsize = data_len >> 3;
+      buf = malloc(bufsize << 2);
+      if (buf == 0)  return (-1);
+
+      if (hp_tlv_parse_sax_dwords(data_len, data, bufsize, buf) < 0)  return (-1);
+
+      *nd = p = tlv_node_new(type);
+
+      p->val.dwordsval.len  = bufsize;
+      p->val.dwordsval.data = buf;
+    }
+    break;
+
+  case HP_TLV_TYPE_QWORDS:
+    {
+      unsigned           bufsize;
+      unsigned long long *buf;
+      struct hp_tlv_node *p;
+    
+      bufsize = data_len >> 4;
+      buf = malloc(bufsize << 3);
+      if (buf == 0)  return (-1);
+
+      if (hp_tlv_parse_sax_qwords(data_len, data, bufsize, buf) < 0)  return (-1);
+
+      *nd = p = tlv_node_new(type);
+
+      p->val.qwordsval.len  = bufsize;
+      p->val.qwordsval.data = buf;
     }
     break;
 
@@ -592,8 +820,31 @@ tlv_dump(struct hp_tlv_node *nd)
       unsigned char *p;
       unsigned      n;
 
-      printf("0x");
-      for (p = nd->val.bytesval.bytes, n = nd->val.bytesval.bytes_len; n; --n, ++p)  printf("%02x", *p);
+      for (p = nd->val.bytesval.data, n = nd->val.bytesval.len; n; --n, ++p)  printf("0x%02x", *p);
+    }
+    break;
+  case HP_TLV_TYPE_WORDS:
+    {
+      unsigned short *p;
+      unsigned       n;
+
+      for (p = nd->val.wordsval.data, n = nd->val.wordsval.len; n; --n, ++p)  printf("0x%04x", *p);
+    }
+    break;
+  case HP_TLV_TYPE_DWORDS:
+    {
+      unsigned long *p;
+      unsigned      n;
+
+      for (p = nd->val.dwordsval.data, n = nd->val.dwordsval.len; n; --n, ++p)  printf("0x%08lx", *p);
+    }
+    break;
+  case HP_TLV_TYPE_QWORDS:
+    {
+      unsigned long long *p;
+      unsigned           n;
+
+      for (p = nd->val.qwordsval.data, n = nd->val.qwordsval.len; n; --n, ++p)  printf("0x%016llx", *p);
     }
     break;
   case HP_TLV_TYPE_LIST:
