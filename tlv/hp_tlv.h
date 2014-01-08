@@ -62,26 +62,29 @@ typedef struct hp_tlv_stream hp_tlv_stream[1];
 
 void hp_tlv_stream_init(struct hp_tlv_stream *st, unsigned len, unsigned char *buf);
 
-int  hp_tlv_tostring_nil(struct hp_tlv_stream *st);
-int  hp_tlv_tostring_bool(struct hp_tlv_stream *st, unsigned val);
-int  hp_tlv_tostring_int(struct hp_tlv_stream *st, int val);
-int  hp_tlv_tostring_float(struct hp_tlv_stream *st, double val);
-int  hp_tlv_tostring_string(struct hp_tlv_stream *st, char *s);
-int  hp_tlv_tostring_bytes(struct hp_tlv_stream *st, unsigned bytes_len, unsigned char *bytes);
-int  hp_tlv_tostring_words(struct hp_tlv_stream *st, unsigned words_len, unsigned short *words);
-int  hp_tlv_tostring_dwords(struct hp_tlv_stream *st, unsigned dwords_len, unsigned long *dwords);
-int  hp_tlv_tostring_qwords(struct hp_tlv_stream *st, unsigned qwords_len, unsigned long long *qwords);
-int  hp_tlv_tostring_list_begin(struct hp_tlv_stream *st, struct hp_tlv_stream *sub);
-int  hp_tlv_tostring_list_end(struct hp_tlv_stream *st, struct hp_tlv_stream *sub);
-int  hp_tlv_tostring(struct hp_tlv_stream *st, struct hp_tlv_node *nd);
+int hp_tlv_tostring_nil(struct hp_tlv_stream *st);
+int hp_tlv_tostring_bool(struct hp_tlv_stream *st, unsigned val);
+int hp_tlv_tostring_int(struct hp_tlv_stream *st, int val);
+int hp_tlv_tostring_float(struct hp_tlv_stream *st, double val);
+int hp_tlv_tostring_string(struct hp_tlv_stream *st, char *s);
+int hp_tlv_tostring_bytes(struct hp_tlv_stream *st, unsigned bytes_len, unsigned char *bytes);
+int hp_tlv_tostring_words(struct hp_tlv_stream *st, unsigned words_len, unsigned short *words);
+int hp_tlv_tostring_dwords(struct hp_tlv_stream *st, unsigned dwords_len, unsigned long *dwords);
+int hp_tlv_tostring_qwords(struct hp_tlv_stream *st, unsigned qwords_len, unsigned long long *qwords);
+int hp_tlv_tostring_list_begin(struct hp_tlv_stream *st, struct hp_tlv_stream *sub);
+int hp_tlv_tostring_list_end(struct hp_tlv_stream *st, struct hp_tlv_stream *sub);
+int hp_tlv_tostring(struct hp_tlv_stream *st, struct hp_tlv_node *nd);
 
-int  hp_tlv_parse_sax(struct hp_tlv_stream *st, enum hp_tlv_type *type, unsigned *data_len, char **pdata);
-int  hp_tlv_parse_sax_bool(unsigned data_len, char *data, unsigned *val);
-int  hp_tlv_parse_sax_int(unsigned data_len, char *data, hp_tlv_intval *val);
-int  hp_tlv_parse_sax_float(unsigned data_len, char *data, hp_tlv_floatval *val);
-int  hp_tlv_parse_sax_string(unsigned data_len, char *data, unsigned strbuf_size, char *strbuf);
-int  hp_tlv_parse_sax_bytes(unsigned data_len, char *data, unsigned bytes_size, unsigned char *bytes);
+int hp_tlv_parse_sax(struct hp_tlv_stream *st, enum hp_tlv_type *type, unsigned *data_len, char **pdata);
+int hp_tlv_parse_sax_bool(unsigned data_len, char *data, unsigned *val);
+int hp_tlv_parse_sax_int(unsigned data_len, char *data, hp_tlv_intval *val);
+int hp_tlv_parse_sax_float(unsigned data_len, char *data, hp_tlv_floatval *val);
+int hp_tlv_parse_sax_string(unsigned data_len, char *data, unsigned strbuf_size, char *strbuf);
+int hp_tlv_parse_sax_bytes(unsigned data_len, char *data, unsigned bytes_size, unsigned char *bytes);
+int hp_tlv_parse_sax_words(unsigned data_len, char *data, unsigned words_size, unsigned short *words);
+int hp_tlv_parse_sax_dwords(unsigned data_len, char *data, unsigned dwords_size, unsigned long *dwords);
+int hp_tlv_parse_sax_qwords(unsigned data_len, char *data, unsigned qwords_size, unsigned long long *qwords);
 
-int  hp_tlv_parse_dom(struct hp_tlv_stream *st, struct hp_tlv_node **nd);
+int hp_tlv_parse_dom(struct hp_tlv_stream *st, struct hp_tlv_node **nd);
 
 #endif /* !defined(__HP_TLV_H) */
