@@ -5,11 +5,18 @@ enum xxx_sm_msg_class {
   XXX_SM_MSG_CLASS_CONF		/* Confirmation */
 };
 
+enum xxx_sm_timer_mode {
+  XXX_SM_TIMER_MODE_SINGLE,
+  XXX_SM_TIMER_MODE_PERIODIC
+};
+
 struct xxx_sm_timer {
-  struct xxx_sm_timer *prev, *next;
-  uint32              deadline;
-  void                (*func)(void *);
-  void                *arg;
+  struct xxx_sm_timer    *prev, *next;
+  enum xxx_sm_timer_mode mode;
+  uint32                 tmout;
+  uint32                 deadline;
+  void                   (*func)(struct xxx_sm_timer *);
+  uint32                 data[1];
 };
 
 struct {
@@ -28,22 +35,9 @@ struct {
   struct xxx_sm_timer *timer_list;
 } xxx_sm_data[1];
 
-
-struct xxx_sm_timer *
-xxx_sm_timer_start(uint32 tmout, void (*func)(void *), void *arg)
+void
+xxx_sm_timer_insert(struct xxx_sm_timer *tmr)
 {
-  struct xxx_sm_timer *tmr;
-
-  tmr = (struct xxx_sm_timer *) calloc(1, sizeof(*tmr));
-  if (tmr == 0) {
-    xxx_sm_log(XXX_SM_LOG_LVL_FATAL, "write() = %d, errno = %d", rc, errno);
-    exit(1);
-  }
- 
-  tmr->deadline = /* current time */ + tmout;
-  tmr->func     = func;
-  tmr->arg      = arg;
-
   for (q = xxx_sm_data->timer_list; q && tmr->deadline >= q->deadline; q = q->next);
   p = q->prev;
 
@@ -52,6 +46,29 @@ xxx_sm_timer_start(uint32 tmout, void (*func)(void *), void *arg)
 
   *(p ? &p->next : &xxx_sm_data->timer_list) = tmr;
   if (q)  q->prev = tmr;
+}
+
+struct xxx_sm_timer *
+xxx_sm_timer_start(enum xxx_sm_timer_mode mode,
+		   uint32                 tmout,
+		   void                   (*func)(struct xxx_sm_timer *),
+		   uint32                 data_size
+		   )
+{
+  struct xxx_sm_timer *tmr;
+
+  tmr = (struct xxx_sm_timer *) calloc(1, sizeof(*tmr) + data_size * sizeof(tmr->data[0]));
+  if (tmr == 0) {
+    xxx_sm_log(XXX_SM_LOG_LVL_FATAL, "write() = %d, errno = %d", rc, errno);
+    exit(1);
+  }
+ 
+  tmr->mode     = mode;
+  tmr->tmout    = tmout;
+  tmr->deadline = /* current time */ + tmout;
+  tmr->func     = func;
+
+  xxx_sm_timer_insert(tmr);
 
   return (tmr);
 }
@@ -85,11 +102,19 @@ xxx_sm_timers_run(void)
   t = /* current time */;
 
   while ((tmr = xxx_sm_data->timer_list) && ((int32) t - (int32) tmr->deadline) >= 0) {
-    (*tmr->func)(tmr->arg);
+    (*tmr->func)(tmr);
 
-    xxx_sm_data->timer_list = tmr->next;
+    q = tmr->next;
+    if (q)  q->prev = 0;
+    xxx_sm_data->timer_list = q;
 
-    free(tmr);
+    if (tmr->mode == XXX_SM_TIMER_MODE_PERIODIC) {
+      tmr->deadline += tmr->tmout;
+
+      xxx_sm_timer_insert(tmr);
+    } else {
+      free(tmr);
+    }
   }
 
   if (tmr)  tmr->prev = 0;
@@ -109,6 +134,36 @@ xxx_sm_msg_send(uint32 len, uint8 *data)
     xxx_sm_log(XXX_SM_LOG_LVL_FATAL, "write() = %d, errno = %d", rc, errno);
     exit(1);
   }
+}
+
+void
+xxx_sm_inst_tmout(struct xxx_sm_timer *tmr)
+{
+  inst = xxx_sm_inst_find_by_id(tmr->data[0]);
+  if (inst == 0) {
+    xxx_sm_log(XXX_SM_LOG_LVL_WARN, "Stale instance timer");
+    return;
+  }
+
+  xxx_sm_ev(inst, TMOUT, tmr);
+}
+
+struct xxx_sm_timer *
+xxx_sm_inst_tmr_start(struct xxx_sm_inst     *inst,
+		      enum xxx_sm_timer_mode mode,
+		      uint32                 tmout,
+		      uint32                 data_size
+		      )
+{
+  tmr = xxx_sm_timer_start(mode, tmout, xxx_sm_inst_tmout, 1 + data_size);
+  if (tmr == 0) {
+    xxx_sm_log(XXX_SM_LOG_LVL_FATAL, "xxx_sm_timer_start() failed");
+    exit(1);
+  }
+
+  tmr->data[0] = inst->id;
+
+  return (tmr);
 }
 
 void
