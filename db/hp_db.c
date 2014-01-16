@@ -18,7 +18,7 @@ hp_db_close(struct hp_db *db)
 }
 
 int
-hp_db_insert(struct hp_db *db, char *key, unsigned data_len, char *data)
+hp_db_insert(struct hp_db *db, unsigned key_len, char *key, unsigned data_len, char *data)
 {
   chdir(db->dirname);
 
@@ -44,6 +44,12 @@ hp_db_iter_last(struct hp_db *db, struct hp_db_iter *iter)
 int
 hp_db_find(struct hp_db *db, struct hp_db_iter *iter, unsigned mode, unsigned key_len, char *key)
 {
+  chdir(db->dirname);
+
+  fd = open(key, O_RD);
+  if (fd < 0)  return (-1);
+
+  close(fd);
 }
 
 int
@@ -73,5 +79,10 @@ hp_db_erase(struct hp_db_iter *iter)
 
 int
 hp_db_cnt(struct hp_db *db, unsigned *cnt)
+{
+}
+
+int
+hp_db_sync(struct hp_db *db)
 {
 }
