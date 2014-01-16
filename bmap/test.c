@@ -6,7 +6,7 @@
 
 
 void
-hp_bmap_print(const struct hp_bmap * const bm)
+hp_bmap_print(struct hp_bmap * const bm)
 {
   HP_BMAP_UNIT *p;
   unsigned  n;
@@ -19,7 +19,7 @@ hp_bmap_print(const struct hp_bmap * const bm)
 int
 main(void)
 {
-  hp_bmap bm1;
+  hp_bmap_var bm1;
 
   printf("----------\n");
 

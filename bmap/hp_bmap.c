@@ -4,28 +4,26 @@
 #include "hp_bmap.h"
 #include "assert/hp_assert.h"
 
-#define HP_BMAP_UNIT_BITS          (1 << HP_BMAP_UNIT_BITS_LOG2)
+#define HP_BMAP_UNIT_BITS               (1 << HP_BMAP_UNIT_BITS_LOG2)
 #define HP_BMAP_BIT_IDX_TO_UNIT_IDX(i)  ((i) >> HP_BMAP_UNIT_BITS_LOG2)
 #define HP_BMAP_BIT_IDX_TO_UNIT_SH(i)   ((i) & (HP_BMAP_UNIT_BITS - 1))
-#define HP_BMAP_BITS_TO_UNITS(n)   (HP_BMAP_BIT_IDX_TO_UNIT_IDX((n) - 1) + 1)
-#define HP_BMAP_UNITS_TO_BYTES(n)  ((n) * sizeof(HP_BMAP_UNIT))
+#define HP_BMAP_BITS_TO_UNITS(n)        (HP_BMAP_BIT_IDX_TO_UNIT_IDX((n) - 1) + 1)
+#define HP_BMAP_UNITS_TO_BYTES(n)       ((n) * sizeof(HP_BMAP_UNIT))
 
 
-hp_bmap_p
-hp_bmap_alloc(const hp_bmap_p bm, unsigned size)
+hp_bmap 
+hp_bmap_alloc(hp_bmap const bm, unsigned size)
 {
-  struct hp_bmap *_bm = (struct hp_bmap *) bm;
-
-  _bm->size = size;
-  _bm->data = (HP_BMAP_UNIT *) hp_mem_alloc(HP_BMAP_UNITS_TO_BYTES(HP_BMAP_BITS_TO_UNITS(_bm->size)));
+  bm->size = size;
+  bm->data = (HP_BMAP_UNIT *) hp_mem_alloc(HP_BMAP_UNITS_TO_BYTES(HP_BMAP_BITS_TO_UNITS(bm->size)));
 
   return (bm);
 }
 
 void
-hp_bmap_free(const hp_bmap_p bm)
+hp_bmap_free(hp_bmap const bm)
 {
-  struct hp_bmap *_bm = (struct hp_bmap *) bm;
+  hp_bmap _bm = (hp_bmap ) bm;
 
   if (_bm->data)  free((void *) _bm->data);
   
@@ -41,16 +39,16 @@ bmap_clear_all(unsigned size, HP_BMAP_UNIT * const data)
 }
 
 
-hp_bmap_p
-hp_bmap_clear_all(const hp_bmap_p bm)
+hp_bmap 
+hp_bmap_clear_all(hp_bmap const bm)
 {
     bmap_clear_all(bm->size, bm->data);
 
     return (bm);
 }
 
-struct hp_bmap *
-hp_bmap_new(struct hp_bmap * const bm, unsigned size)
+hp_bmap 
+hp_bmap_new(hp_bmap const bm, unsigned size)
 {
     return (hp_bmap_clear_all(hp_bmap_alloc(bm, size)));
 }
@@ -62,8 +60,8 @@ bmap_get(unsigned to_size, HP_BMAP_UNIT *to_data, unsigned ofs, unsigned len, un
     unsigned           sh, r;
     const HP_BMAP_UNIT *p;
 
-    ASSERT((ofs + len) <= from_size);
-    ASSERT(len <= to_size);
+    HP_ASSERT((ofs + len) <= from_size);
+    HP_ASSERT(len <= to_size);
 
     bmap_clear_all(to_size, to_data);
 
@@ -79,8 +77,8 @@ bmap_get(unsigned to_size, HP_BMAP_UNIT *to_data, unsigned ofs, unsigned len, un
     }
 }
 
-struct hp_bmap *
-hp_bmap_get(const struct hp_bmap * const to, unsigned ofs, unsigned len, const struct hp_bmap * const from)
+hp_bmap 
+hp_bmap_get(hp_bmap const to, unsigned ofs, unsigned len, hp_bmap const from)
 {
     bmap_get(to->size, to->data, ofs, len, from->size, from->data);
 
@@ -88,7 +86,7 @@ hp_bmap_get(const struct hp_bmap * const to, unsigned ofs, unsigned len, const s
 }
 
 uint32
-hp_bmap_get32(const struct hp_bmap * const from, unsigned ofs, unsigned len)
+hp_bmap_get32(hp_bmap const from, unsigned ofs, unsigned len)
 {
     HP_BMAP_UNIT temp[1];
 
@@ -98,7 +96,7 @@ hp_bmap_get32(const struct hp_bmap * const from, unsigned ofs, unsigned len)
 }
 
 uint64
-hp_bmap_get64(const struct hp_bmap * const from, unsigned ofs, unsigned len)
+hp_bmap_get64(hp_bmap const from, unsigned ofs, unsigned len)
 {
     HP_BMAP_UNIT temp[2];
 
@@ -109,13 +107,13 @@ hp_bmap_get64(const struct hp_bmap * const from, unsigned ofs, unsigned len)
 
 
 static void
-bmap_set(unsigned to_size, HP_BMAP_UNIT * const to_data, unsigned ofs, unsigned len, unsigned from_size, const HP_BMAP_UNIT * const from_data)
+bmap_set(unsigned to_size, HP_BMAP_UNIT * const to_data, unsigned ofs, unsigned len, unsigned from_size, const HP_BMAP_UNIT *from_data)
 {
-    unsigned  sh, r, b;
+    unsigned     sh, r, b;
     HP_BMAP_UNIT *p, m, u;
 
-    ASSERT((ofs + len) <= to_size);
-    ASSERT(len <= from_size);
+    HP_ASSERT((ofs + len) <= to_size);
+    HP_ASSERT(len <= from_size);
 
     sh = HP_BMAP_BIT_IDX_TO_UNIT_SH(ofs);
     r  = HP_BMAP_UNIT_BITS - sh;
@@ -128,16 +126,16 @@ bmap_set(unsigned to_size, HP_BMAP_UNIT * const to_data, unsigned ofs, unsigned 
     }
 }
 
-struct hp_bmap *
-hp_bmap_set(const struct hp_bmap * const to, unsigned ofs, unsigned len, const struct hp_bmap * const from)
+hp_bmap 
+hp_bmap_set(hp_bmap const to, unsigned ofs, unsigned len, hp_bmap const from)
 {
     bmap_set(to->size, to->data, ofs, len, from->size, from->data);
 
     return (to);
 }
 
-struct hp_bmap *
-hp_bmap_set32(const struct hp_bmap * const to, unsigned ofs, unsigned len, uint32 val)
+hp_bmap 
+hp_bmap_set32(hp_bmap const to, unsigned ofs, unsigned len, uint32 val)
 {
     HP_BMAP_UNIT temp[1];
 
@@ -147,8 +145,8 @@ hp_bmap_set32(const struct hp_bmap * const to, unsigned ofs, unsigned len, uint3
     return (to);
 }
 
-struct hp_bmap *
-hp_bmap_set64(const struct hp_bmap * const to, unsigned ofs, unsigned len, uint64 val)
+hp_bmap 
+hp_bmap_set64(hp_bmap const to, unsigned ofs, unsigned len, uint64 val)
 {
     HP_BMAP_UNIT temp[2];
 
@@ -160,13 +158,13 @@ hp_bmap_set64(const struct hp_bmap * const to, unsigned ofs, unsigned len, uint6
 }
 
 HP_BMAP_UNIT *
-hp_bmap_data(const struct hp_bmap * const bm)
+hp_bmap_data(hp_bmap const bm)
 {
   return (bm->data);
 }
 
 unsigned
-hp_bmap_data_size(const struct hp_bmap * const bm)
+hp_bmap_data_size(hp_bmap const bm)
 {
   return (HP_BMAP_BITS_TO_UNITS(bm->size));
 }
