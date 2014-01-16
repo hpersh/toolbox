@@ -1,8 +1,8 @@
-CC	= gcc -I. -I..
+include ../common/Makefile
 
-all:
+
+hp_assert.o: hp_assert.c
 	$(CC) -c hp_assert.c
 
-test:
-	$(CC) -D__UNIT_TEST__ hp_assert.c
-	./a.out
+obj:	hp_assert.o
+

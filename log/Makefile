@@ -1,13 +1,11 @@
-include ../common/Makefile
-
-CC	= gcc -I. -I..
+CC	= gcc -g -I. -I..
 
 OBJS	= hp_log.o
 
-BIN	= a.out
-
 all: $(OBJS)
 	$(CC) -c hp_log.c
+
+include ../common/Makefile
 
 test:
 	make -C ../assert

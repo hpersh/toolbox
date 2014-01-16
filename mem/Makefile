@@ -1,7 +1,9 @@
 CC	= gcc -I. -I..
 
-all:
+hp_mem.o:	hp_mem.c
 	$(CC) -c hp_mem.c
+
+obj:	hp_mem.o
 
 test:
 	make -C ../log all
