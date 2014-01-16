@@ -438,7 +438,7 @@ hp_tlv_tostring_list_end(struct hp_tlv_stream *st, struct hp_tlv_stream *sub)
 
 
 int
-hp_tlv_tostring(struct hp_tlv_stream *st, struct hp_tlv_node *nd)
+hp_tlv_tostring_node(struct hp_tlv_stream *st, struct hp_tlv_node *nd)
 {
   switch (nd->type) {
   case HP_TLV_TYPE_NIL:
@@ -467,7 +467,7 @@ hp_tlv_tostring(struct hp_tlv_stream *st, struct hp_tlv_node *nd)
       if (hp_tlv_tostring_list_begin(st, sub) < 0)  return (-1);
 
       for (p = HP_LIST_FIRST(nd->val.listval); p != HP_LIST_END(nd->val.listval); p = HP_LIST_NEXT(p)) {
-	if (hp_tlv_tostring(sub, FIELD_PTR_TO_STRUCT_PTR(p, struct hp_tlv_node, siblings)) < 0)  return (-1);
+	if (hp_tlv_tostring_node(sub, FIELD_PTR_TO_STRUCT_PTR(p, struct hp_tlv_node, siblings)) < 0)  return (-1);
       }
       
       return (hp_tlv_tostring_list_end(st, sub));
@@ -477,6 +477,24 @@ hp_tlv_tostring(struct hp_tlv_stream *st, struct hp_tlv_node *nd)
   }
 
   return (-1);
+}
+
+
+int
+hp_tlv_tostring(unsigned bufsize, char *buf, struct hp_tlv_node *nd)
+{
+  int                  result;
+  struct hp_tlv_stream *st;
+
+  hp_tlv_stream_init(st, bufsize - 1, buf);
+
+  if (hp_tlv_tostring_node(st, nd) < 0)  return (-1);
+
+  result = tlv_stream_ofs(st);
+
+  buf[result] = 0;
+
+  return (result);
 }
 
 
