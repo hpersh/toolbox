@@ -13,10 +13,10 @@ enum {
   HP_LOG_MAX_LEN = 132
 };
 
-void hp_log(char *fac, enum hp_log_lvl lvl, char *func, unsigned line_num, char *fmt, ...);
+void hp_log(char *mod, enum hp_log_lvl lvl, char *file, unsigned line_num, char *fmt, ...);
 
-#define HP_LOG(fac, lvl, ...)					\
-  hp_log((fac), (lvl), __FUNCTION__, __LINE__, __VA_ARGS__)
+#define HP_LOG(mod, lvl, ...)					\
+  hp_log((mod), (lvl), (char *) __FILE__, __LINE__, __VA_ARGS__)
 
 /***************************************************************************/
 
@@ -26,7 +26,7 @@ void hp_log(char *fac, enum hp_log_lvl lvl, char *func, unsigned line_num, char 
 extern void hp_log_time_get(char *buf);
 
 /* Write given string to log output */
-extern void hp_log_puts(char *fac, enum hp_log_lvl lvl, char *buf);
+extern void hp_log_puts(char *mod, enum hp_log_lvl lvl, char *buf);
 
 /* React to fatal error */
 extern void hp_fatal(void);

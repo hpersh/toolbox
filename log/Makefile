@@ -9,5 +9,5 @@ include ../common/Makefile
 
 test:
 	make -C ../assert
-	$(CC) -D__UNIT_TEST__ hp_log.c stubs.c test.c ../assert/hp_assert.o
+	$(CC) -D__UNIT_TEST__ hp_log.c test.c ../assert/hp_assert.o
 	./a.out

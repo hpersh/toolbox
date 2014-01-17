@@ -6,11 +6,9 @@
 #include "common/hp_common.h"
 #include "assert/hp_assert.h"
 
-extern void hp_log_str(char *str); /* Must be supplied */
-extern void hp_fatal(void);	/* Must be supplied */
 
 void
-hp_log(char *fac, enum hp_log_lvl lvl, char *func, unsigned linenum, char *fmt, ...)
+hp_log(char *mod, enum hp_log_lvl lvl, char *file, unsigned linenum, char *fmt, ...)
 {
   static const char * const lvl_str_tbl[] = {
     "|DEBUG|",
@@ -34,22 +32,22 @@ hp_log(char *fac, enum hp_log_lvl lvl, char *func, unsigned linenum, char *fmt, 
   n = strlen(buf);
 
   strcpy(buf + n, "|");
-  n = strlen(buf);
+  ++n;
 
-  if (fac) {
-    strcpy(buf + n, fac);
+  if (mod) {
+    strcpy(buf + n, mod);
     n = strlen(buf);
   }
 
   strcpy(buf + n, lvl_str_tbl[lvl]);
   n = strlen(buf);
 
-  snprintf(buf + n, sizeof(buf) - n, "%s:%u|", func, linenum);
+  snprintf(buf + n, sizeof(buf) - n, "%s:%u|", file, linenum);
   n = strlen(buf);
 
   vsnprintf(buf + n, sizeof(buf) - n, fmt, ap);
 
-  hp_log_puts(fac, lvl, buf);
+  hp_log_puts(mod, lvl, buf);
 
   va_end(ap);
 
