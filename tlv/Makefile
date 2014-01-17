@@ -5,4 +5,5 @@ all:
 
 test:	
 	make -C ../list
-	gcc -g -I.. -D__UNIT_TEST__ hp_tlv.c ../list/hp_list.o
+	gcc -g -I.. -D__UNIT_TEST__ hp_tlv.c test.c ../list/hp_list.o
+	./a.out

@@ -1,6 +1,9 @@
 #ifndef __HP_TLV_H
 #define __HP_TLV_H
 
+#include "common/hp_common.h"
+#include "list/hp_list.h"
+
 #include "hp_tlv_cfg.h"
 
 enum hp_tlv_type {
@@ -73,7 +76,7 @@ int hp_tlv_tostring_dwords(struct hp_tlv_stream *st, unsigned dwords_len, unsign
 int hp_tlv_tostring_qwords(struct hp_tlv_stream *st, unsigned qwords_len, unsigned long long *qwords);
 int hp_tlv_tostring_list_begin(struct hp_tlv_stream *st, struct hp_tlv_stream *sub);
 int hp_tlv_tostring_list_end(struct hp_tlv_stream *st, struct hp_tlv_stream *sub);
-int hp_tlv_tostring(struct hp_tlv_stream *st, struct hp_tlv_node *nd);
+int hp_tlv_tostring(unsigned bufsize, char *buf, struct hp_tlv_node *nd);
 
 int hp_tlv_parse_sax(struct hp_tlv_stream *st, enum hp_tlv_type *type, unsigned *data_len, char **pdata);
 int hp_tlv_parse_sax_bool(unsigned data_len, char *data, unsigned *val);
