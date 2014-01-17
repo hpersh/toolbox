@@ -27,6 +27,3 @@ extern void hp_log_time_get(char *buf);
 
 /* Write given string to log output */
 extern void hp_log_puts(char *mod, enum hp_log_lvl lvl, char *buf);
-
-/* React to fatal error */
-extern void hp_fatal(void);

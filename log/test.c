@@ -20,19 +20,15 @@ hp_log_puts(char *fac, enum hp_log_lvl lvl, char *s)
   puts(s);
 }
 
-void
-hp_fatal(void)
-{
-  printf("Got FATAL indication\n");
-}
-
 char mod[] = "Test";
 
 int
 main(void)
 {
-  HP_LOG(mod, HP_LOG_LVL_DEBUG, "This is a debug message: %d", 1234);
+  HP_LOG(mod, HP_LOG_LVL_DEBUG, "This is a debug message, function = %s, line = %u", __FUNCTION__, __LINE__);
   
+  HP_LOG(mod, HP_LOG_LVL_ERR, "Some error, x = %d", -1);  
+
   HP_LOG(mod, HP_LOG_LVL_CRIT, "OMG!");
 
   HP_LOG(mod, HP_LOG_LVL_FATAL, "PANIC!!!");

@@ -50,7 +50,5 @@ hp_log(char *mod, enum hp_log_lvl lvl, char *file, unsigned linenum, char *fmt, 
   hp_log_puts(mod, lvl, buf);
 
   va_end(ap);
-
-  if (lvl == HP_LOG_LVL_FATAL)  hp_fatal();
 }
 
