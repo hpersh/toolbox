@@ -1,8 +1,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
-#include <stdio.h>
 #include <assert.h>
+#include <stdio.h>
+
 
 #define ARRAY_SIZE(a)  (sizeof(a) / sizeof((a)[0]))
 
@@ -103,6 +104,7 @@ enum obj_type {
   OBJ_TYPE_WORDS,
   OBJ_TYPE_DWORDS,
   OBJ_TYPE_QWORDS,
+  OBJ_TYPE_BITS,
   OBJ_TYPE_DPTR,
   OBJ_TYPE_PAIR,
   OBJ_TYPE_LIST,
@@ -185,6 +187,8 @@ _obj_type_parent(unsigned type)
   case OBJ_TYPE_QWORDS:
   case OBJ_TYPE_ARRAY:
     return (OBJ_TYPE_BLOCK);
+  case OBJ_TYPE_BITS:
+    return (OBJ_TYPE_DWORDS);
   case OBJ_TYPE_PAIR:
   case OBJ_TYPE_LIST:
     return (OBJ_TYPE_DPTR);
@@ -197,8 +201,8 @@ _obj_type_parent(unsigned type)
   return (0);
 }
 
-static unsigned
-_obj_type_is_subtype_of(unsigned type, unsigned parent)
+unsigned
+obj_type_is_subtype_of(unsigned type, unsigned parent)
 {
   for ( ; type != OBJ_TYPE_OBJECT; type = _obj_type_parent(type)) {
     if (type == parent)  return (1);
@@ -209,7 +213,7 @@ _obj_type_is_subtype_of(unsigned type, unsigned parent)
 static unsigned
 _obj_is_kind_of(struct obj *obj, unsigned parent)
 {
-  return (_obj_type_is_subtype_of(_obj_type(obj), parent));
+  return (obj_type_is_subtype_of(_obj_type(obj), parent));
 }
 
 enum {
@@ -476,9 +480,15 @@ obj_vm_push(struct obj_vm *vm, unsigned r1)
 }
 
 unsigned
-obj_type(struct obj_vm *vm, unsigned r1)
+obj_vm_type(struct obj_vm *vm, unsigned r1)
 {
   return (_obj_type(obj_vm_reg(vm, r1)));
+}
+
+unsigned
+obj_vm_is_kind_of(struct obj_vm *vm, unsigned reg, unsigned parent)
+{
+  return (_obj_is_kind_of(obj_vm_reg(vm, reg), parent));
 }
 
 void
@@ -502,24 +512,22 @@ _obj_alloc(struct obj_vm *vm, unsigned type)
     break;
   default:
     {
-      struct list *li = &vm->obj_list.list[vm->obj_list.idx_free];
+      struct list *li;
       struct list *nd;
     
+      li = &vm->obj_list.list[vm->obj_list.idx_free];
       if (list_first(li) == list_end(li)) {
 	assert(0);
       }
       
       nd = list_first(li);
-      obj = FIELD_PTR_TO_STRUCT_PTR(nd, struct obj, list_node);
-      
       list_erase(nd);
-      
+
+      obj = FIELD_PTR_TO_STRUCT_PTR(nd, struct obj, list_node);
       memset(obj, 0, sizeof(*obj));
       obj->type = type;
       
-      li = &vm->obj_list.list[vm->obj_list.idx_alloced];
-      
-      list_insert(nd, list_end(li));
+      list_insert(nd, list_end(&vm->obj_list.list[vm->obj_list.idx_alloced]));
     }
   }
 
@@ -546,19 +554,21 @@ enum obj_op {
   OBJ_OP_GT,
   OBJ_OP_HASH,
   OBJ_OP_KEYS,
+  /* OBJ_OP_LSH */
   OBJ_OP_LT,
   OBJ_OP_MINUS,
   OBJ_OP_MOD,
   OBJ_OP_MULT,
   OBJ_OP_NOT,
   OBJ_OP_OR,
+  /* OBJ_OP_RSH */
   OBJ_OP_SIZE,
   OBJ_OP_SLICE,
   OBJ_OP_SUB,
   OBJ_NUM_OPS
 };
 
-void obj_method_call(struct obj_vm *vm, unsigned r1, unsigned op, ...);
+void obj_vm_method_call(struct obj_vm *vm, unsigned r1, unsigned op, ...);
 
 /***************************************************************************/
 
@@ -583,12 +593,17 @@ static struct obj **__obj_bool_new(struct obj_vm *vm, unsigned val);
 static struct obj **__obj_integer_new(struct obj_vm *vm, obj_integer_val_t val);
 static struct obj **__obj_float_new(struct obj_vm *vm, obj_float_val_t val);
 static struct obj **__obj_string_new(struct obj_vm *vm, unsigned n, ...);
-static struct obj **__obj_dptr_new(struct obj_vm *vm, unsigned type, struct obj *car, struct obj *cdr);
 static struct obj **__obj_pair_new(struct obj_vm *vm, struct obj *car, struct obj *cdr);
 static struct obj **__obj_list_new(struct obj_vm *vm, struct obj *car, struct obj *cdr);
 static struct obj **__obj_array_new(struct obj_vm *vm, unsigned type, unsigned size);
-void obj_newr(struct obj_vm *vm, unsigned r1, unsigned type, ...);
-void obj_new(struct obj_vm *vm, unsigned r1, unsigned type, ...);
+void obj_vm_newc(struct obj_vm *vm, unsigned r1, unsigned type, ...);
+void obj_vm_new(struct obj_vm *vm, unsigned r1, unsigned type, ...);
+
+static void
+obj_bad_method(struct obj_vm *vm, unsigned r1, va_list ap)
+{
+  vm->errno = OBJ_ERRNO_BAD_METHOD;
+}
 
 /***************************************************************************/
 
@@ -671,7 +686,7 @@ __obj_bool_new(struct obj_vm *vm, unsigned val)
 {
   struct obj **result = _obj_alloc(vm, OBJ_TYPE_BOOLEAN);
 
-  (*result)->val.boolval = val;
+  (*result)->val.boolval = (val != 0);
 
   return (result);
 }
@@ -684,8 +699,8 @@ _obj_bool_new(struct obj_vm *vm, unsigned r1, va_list ap)
 
   switch (_obj_type(q)) {
   case OBJ_TYPE_BOOLEAN:
-    val = (q->val.boolval != 0);
-    break;
+    _obj_assign(vm, _obj_vm_reg(vm, r1), q);
+    return;
   case OBJ_TYPE_INTEGER:
     val = (q->val.intval != 0);
     break;
@@ -795,8 +810,8 @@ _obj_integer_new(struct obj_vm *vm, unsigned r1, va_list ap)
     val = (q->val.boolval != 0);
     break;
   case OBJ_TYPE_INTEGER:
-    val = q->val.intval;
-    break;
+    _obj_assign(vm, _obj_vm_reg(vm, r1), q);
+    return;
   case OBJ_TYPE_FLOAT:
     val = (obj_integer_val_t) q->val.floatval;
     break;
@@ -1035,8 +1050,8 @@ _obj_float_new(struct obj_vm *vm, unsigned r1, va_list ap)
     val = (q->val.boolval != 0);
     break;
   case OBJ_TYPE_FLOAT:
-    val = q->val.floatval;
-    break;
+    _obj_assign(vm, _obj_vm_reg(vm, r1), q);
+    return;
   case OBJ_TYPE_INTEGER:
     val = (obj_float_val_t) q->val.intval;
     break;
@@ -1242,8 +1257,8 @@ _obj_string_new(struct obj_vm *vm, unsigned r1, va_list ap)
     sprintf(buf, OBJ_FLOAT_PRINTF_FMT, q->val.floatval);
     break;
   case OBJ_TYPE_STRING:
-    data = q->val.strval.data;
-    break;
+    _obj_assign(vm, _obj_vm_reg(vm, r1), q);
+    return;
   case OBJ_TYPE_PAIR:
     {
       struct obj **pp;
@@ -1253,9 +1268,9 @@ _obj_string_new(struct obj_vm *vm, unsigned r1, va_list ap)
       obj_vm_push(vm, 2);
 
       _obj_assign(vm, _obj_vm_reg(vm, 1), q->val.dptrval.car);
-      obj_new(vm, 1, OBJ_TYPE_STRING, 1);
+      obj_vm_new(vm, 1, OBJ_TYPE_STRING, 1);
       _obj_assign(vm, _obj_vm_reg(vm, 2), q->val.dptrval.cdr);
-      obj_new(vm, 2, OBJ_TYPE_STRING, 2);
+      obj_vm_new(vm, 2, OBJ_TYPE_STRING, 2);
       
       _obj_assign(vm, pp, *__obj_string_new(vm, 5, 1, "<",
 					           obj_vm_reg(vm, 1)->val.strval.size - 1, obj_vm_reg(vm, 1)->val.strval.data,
@@ -1280,7 +1295,7 @@ _obj_string_new(struct obj_vm *vm, unsigned r1, va_list ap)
       obj_vm_push(vm, 1);
       for (f = 1; q; q = q->val.dptrval.cdr) {
 	_obj_assign(vm, _obj_vm_reg(vm, 1), q->val.dptrval.car);
-	obj_new(vm, 1, OBJ_TYPE_STRING, 1);
+	obj_vm_new(vm, 1, OBJ_TYPE_STRING, 1);
 	_obj_assign(vm, pp, *(f ? __obj_string_new(vm, 2, (*pp)->val.strval.size - 1, (*pp)->val.strval.data,
 						          obj_vm_reg(vm, 1)->val.strval.size - 1, obj_vm_reg(vm, 1)->val.strval.data
 						   ) 
@@ -1313,7 +1328,7 @@ _obj_string_new(struct obj_vm *vm, unsigned r1, va_list ap)
       obj_vm_push(vm, 1);
       for (f = 1, rr = q->val.arrayval.data, n = q->val.arrayval.size; n; --n, ++rr) {
 	_obj_assign(vm, _obj_vm_reg(vm, 1), *rr);
-	obj_new(vm, 1, OBJ_TYPE_STRING, 1);
+	obj_vm_new(vm, 1, OBJ_TYPE_STRING, 1);
 	_obj_assign(vm, pp, *(f ? __obj_string_new(vm, 2, (*pp)->val.strval.size - 1, (*pp)->val.strval.data,
 						          obj_vm_reg(vm, 1)->val.strval.size - 1, obj_vm_reg(vm, 1)->val.strval.data
 						   )
@@ -1349,9 +1364,9 @@ _obj_string_new(struct obj_vm *vm, unsigned r1, va_list ap)
 	for (s = *rr; s; s = s->val.dptrval.cdr) {
 	  t = s->val.dptrval.car;
 	  _obj_assign(vm, _obj_vm_reg(vm, 1), t->val.dptrval.car);
-	  obj_new(vm, 1, OBJ_TYPE_STRING, 1);
+	  obj_vm_new(vm, 1, OBJ_TYPE_STRING, 1);
 	  _obj_assign(vm, _obj_vm_reg(vm, 2), t->val.dptrval.cdr);
-	  obj_new(vm, 2, OBJ_TYPE_STRING, 2);
+	  obj_vm_new(vm, 2, OBJ_TYPE_STRING, 2);
 	  _obj_assign(vm, pp, *(f ? __obj_string_new(vm, 4, (*pp)->val.strval.size - 1, (*pp)->val.strval.data,
 					 	            obj_vm_reg(vm, 1)->val.strval.size - 1, obj_vm_reg(vm, 1)->val.strval.data,
 						            2, ": ",
@@ -1539,6 +1554,58 @@ obj_string_val(struct obj_vm *vm, unsigned r1)
 /***************************************************************************/
 
 static struct obj **
+__obj_bytes_new(struct obj_vm *vm, unsigned n, ...)
+{
+  va_list       ap;
+  unsigned      size, len, nn;
+  struct obj    **result;
+  unsigned char *p, *s;
+
+  va_start(ap, n);
+  for (size = 0, nn = n; nn; --nn) {
+    len = va_arg(ap, unsigned);
+    s   = va_arg(ap, unsigned char *);
+    
+    size += len;
+  }
+  va_end(ap);
+
+  result = _obj_alloc(vm, OBJ_TYPE_BYTES);
+  (*result)->val.strval.data = p = malloc((*result)->val.strval.size = size);
+
+  va_start(ap, n);
+  for (nn = n; nn; --nn) {
+    len = va_arg(ap, unsigned);
+    s   = va_arg(ap, unsigned char *);
+
+    memcpy(p, s, len);
+    p += len;
+  }
+  va_end(ap);
+
+  return (result);
+}
+
+static void
+obj_bytes_and(struct obj_vm *vm, unsigned r1, va_list ap)
+{
+  struct obj *p = obj_vm_reg(vm, r1), *q = obj_vm_reg(vm, va_arg(ap, unsigned));
+
+  if (_obj_type(q) != OBJ_TYPE_BYTES) {
+    vm->errno = OBJ_ERRNO_BAD_TYPE;
+    return;
+  }
+
+  __obj_bytes_new(vm, 1, p->val.bytesval.size, p->val.bytesval.data);
+
+  
+
+  obj_vm_pop(vm, r1);
+}
+
+/***************************************************************************/
+
+static struct obj **
 __obj_dptr_new(struct obj_vm *vm, unsigned type, struct obj *car, struct obj *cdr)
 {
   struct obj **result = _obj_alloc(vm, type);
@@ -1547,18 +1614,6 @@ __obj_dptr_new(struct obj_vm *vm, unsigned type, struct obj *car, struct obj *cd
   _obj_assign(vm, &(*result)->val.dptrval.cdr, cdr);
 
   return (result);
-}
-
-static void
-_obj_dptr_new(struct obj_vm *vm, unsigned type, unsigned r1, va_list ap)
-{
-  struct obj *car, *cdr;
-
-  car = obj_vm_reg(vm, va_arg(ap, unsigned));
-  cdr = obj_vm_reg(vm, va_arg(ap, unsigned));
-
-  __obj_dptr_new(vm, type, car, cdr);
-  obj_vm_pop(vm, r1);
 }
 
 static void
@@ -1588,13 +1643,17 @@ __obj_pair_new(struct obj_vm *vm, struct obj *car, struct obj *cdr)
 static void
 _obj_pair_new(struct obj_vm *vm, unsigned r1, va_list ap)
 {
-  _obj_dptr_new(vm, OBJ_TYPE_PAIR, r1, ap);
+  struct obj *car = obj_vm_reg(vm, va_arg(ap, unsigned));
+  struct obj *cdr = obj_vm_reg(vm, va_arg(ap, unsigned));
+
+  __obj_dptr_new(vm, OBJ_TYPE_PAIR, car, cdr);
+  obj_vm_pop(vm, r1);
 }
 
 static void
 obj_pair_eq(struct obj_vm *vm, unsigned r1, va_list ap)
 {
-  struct obj *p = obj_vm_reg(vm, va_arg(ap, unsigned));
+  struct obj *p = obj_vm_reg(vm, r1);
   struct obj *q = obj_vm_reg(vm, va_arg(ap, unsigned));
   struct obj **rr;
 
@@ -1606,11 +1665,11 @@ obj_pair_eq(struct obj_vm *vm, unsigned r1, va_list ap)
 
     _obj_assign(vm, _obj_vm_reg(vm, 1), p->val.dptrval.car);
     _obj_assign(vm, _obj_vm_reg(vm, 2), q->val.dptrval.car);
-    obj_method_call(vm, 1, OBJ_OP_EQ, 2);
+    obj_vm_method_call(vm, 1, OBJ_OP_EQ, 2);
     if (obj_vm_reg(vm, 1)->val.boolval) {
       _obj_assign(vm, _obj_vm_reg(vm, 1), p->val.dptrval.cdr);
       _obj_assign(vm, _obj_vm_reg(vm, 2), q->val.dptrval.cdr);
-      obj_method_call(vm, 1, OBJ_OP_EQ, 2);
+      obj_vm_method_call(vm, 1, OBJ_OP_EQ, 2);
       if (obj_vm_reg(vm, 1)->val.boolval) {
 	(*rr)->val.boolval = 1;
       }
@@ -1633,10 +1692,11 @@ obj_pair_hash(struct obj_vm *vm, unsigned r1, va_list ap)
   obj_vm_push(vm, 2);
 
   _obj_assign(vm, _obj_vm_reg(vm, 1), p->val.dptrval.car);
-  obj_method_call(vm, 1, OBJ_OP_HASH);
+  obj_vm_method_call(vm, 1, OBJ_OP_HASH);
   _obj_assign(vm, _obj_vm_reg(vm, 2), p->val.dptrval.cdr);
-  obj_method_call(vm, 1, OBJ_OP_HASH);
+  obj_vm_method_call(vm, 1, OBJ_OP_HASH);
   (*pp)->val.intval = obj_vm_reg(vm, 1)->val.intval + obj_vm_reg(vm, 2)->val.intval;
+
   obj_vm_pop(vm, 2);
   obj_vm_pop(vm, 1);
   obj_vm_pop(vm, r1);
@@ -1653,18 +1713,22 @@ __obj_list_new(struct obj_vm *vm, struct obj *car, struct obj *cdr)
 static void
 _obj_list_new(struct obj_vm *vm, unsigned r1, va_list ap)
 {
-  struct obj *q = obj_vm_reg(vm, va_arg(ap, unsigned));
+  __obj_dptr_new(vm, OBJ_TYPE_LIST, obj_vm_reg(vm, va_arg(ap, unsigned)), 0);
+  obj_vm_pop(vm, r1);
+}
 
-  switch (_obj_type(q)) {
+static unsigned
+is_list(struct obj *p)
+{
+  switch (_obj_type(p)) {
   case OBJ_TYPE_NIL:
   case OBJ_TYPE_LIST:
-    break;
+    return (1);
   default:
-    vm->errno = OBJ_ERRNO_BAD_TYPE;
-    return;
+    ;
   }
 
-  _obj_dptr_new(vm, OBJ_TYPE_LIST, r1, ap);
+  return (0);
 }
 
 static unsigned
@@ -1693,7 +1757,7 @@ obj_list_append(struct obj_vm *vm, unsigned r1, va_list ap)
   }
   
   pp = __obj_nil_new(vm);
-  for (;;) {
+  for ( ; p; p = p->val.dptrval.cdr) {
     qq = __obj_list_new(vm, p->val.dptrval.car, 0);
     _obj_assign(vm, pp, *qq);
     pp = &(*qq)->val.dptrval.cdr;
@@ -1752,7 +1816,7 @@ obj_list_eq(struct obj_vm *vm, unsigned r1, va_list ap)
     for ( ; p && q; p = p->val.dptrval.cdr, q = q->val.dptrval.cdr) {
       _obj_assign(vm, _obj_vm_reg(vm, 1), p->val.dptrval.car);
       _obj_assign(vm, _obj_vm_reg(vm, 2), q->val.dptrval.car);
-      obj_method_call(vm, 1, OBJ_OP_EQ, 2);
+      obj_vm_method_call(vm, 1, OBJ_OP_EQ, 2);
       if (!obj_vm_reg(vm, 1)->val.boolval)  break;
     }
     if (p == 0 && q == 0)  (*rr)->val.boolval = 1;
@@ -1774,7 +1838,7 @@ obj_list_hash(struct obj_vm *vm, unsigned r1, va_list ap)
 
   for ( ; p; p = p->val.dptrval.cdr) {
     _obj_assign(vm, _obj_vm_reg(vm, 1), p->val.dptrval.car);
-    obj_method_call(vm, 1, OBJ_OP_HASH);
+    obj_vm_method_call(vm, 1, OBJ_OP_HASH);
     (*pp)->val.intval += obj_vm_reg(vm, 1)->val.intval;
   }
 
@@ -1810,6 +1874,7 @@ obj_list_slice(struct obj_vm *vm, unsigned r1, va_list ap)
   slice_idxs((int) list_len(p), &i, &n);
 
   for ( ; i; --i)  p = p->val.dptrval.cdr;
+  pp = __obj_nil_new(vm);
   for ( ; n; --n) {
     _obj_assign(vm, pp, *__obj_list_new(vm, p->val.dptrval.car, 0));
     obj_vm_drop(vm);
@@ -1828,9 +1893,68 @@ __obj_array_new(struct obj_vm *vm, unsigned type, unsigned size)
   struct obj **result = _obj_alloc(vm, type);
 
   (*result)->val.arrayval.size = size;
-  (*result)->val.arrayval.data = calloc(size, sizeof((*result)->val.arrayval.data[0]));
+  (*result)->val.arrayval.data = size ? calloc(size, sizeof((*result)->val.arrayval.data[0])) : 0;
 
   return (result);
+}
+
+static void
+_obj_array_new(struct obj_vm *vm, unsigned r1, va_list ap)
+{
+  struct obj *q = obj_vm_reg(vm, va_arg(ap, unsigned));
+
+  switch (_obj_type(q)) {
+  case OBJ_TYPE_NIL:
+    __obj_array_new(vm, OBJ_TYPE_ARRAY, 0);
+    break;
+  case OBJ_TYPE_INTEGER:
+    if (q->val.intval < 0) {
+      vm->errno = OBJ_ERRNO_BAD_VALUE;
+      return;
+    }
+    __obj_array_new(vm, OBJ_TYPE_ARRAY, q->val.intval);
+    break;
+  case OBJ_TYPE_LIST:
+    {
+      unsigned   n;
+      struct obj **pp, **qq;
+
+      pp = __obj_array_new(vm, OBJ_TYPE_ARRAY, n = list_len(q));
+      for (qq = (*pp)->val.arrayval.data; n; --n, ++qq, q = q->val.dptrval.cdr) {
+	_obj_assign(vm, qq, q->val.dptrval.car);
+      }
+    }
+    break;
+  case OBJ_TYPE_ARRAY:
+    {
+      unsigned   n;
+      struct obj **pp, **qq, **rr;
+
+      pp = __obj_array_new(vm, OBJ_TYPE_ARRAY, n = q->val.arrayval.size);
+      for (qq = (*pp)->val.arrayval.data, rr = q->val.arrayval.data; n; --n, ++rr, ++qq) {
+	_obj_assign(vm, qq, *rr);
+      }
+    }
+    break;
+  case OBJ_TYPE_DICT:
+    {
+      unsigned   n;
+      struct obj **pp, **qq, **rr, *s;
+
+      pp = __obj_array_new(vm, OBJ_TYPE_ARRAY, q->val.dictval.cnt);
+      for (qq = (*pp)->val.arrayval.data, rr = q->val.dictval.base.data, n = q->val.dictval.base.size; n; --n, ++rr, ++qq) {
+	for (s = *rr; s; s = s->val.dptrval.cdr) {
+	  _obj_assign(vm, qq, s->val.dptrval.car);
+	}
+      }
+    }
+    break;
+  default:
+    vm->errno = OBJ_ERRNO_BAD_TYPE;
+    return;
+  }
+
+  obj_vm_pop(vm, r1);
 }
 
 static void
@@ -1930,6 +2054,64 @@ obj_array_slice(struct obj_vm *vm, unsigned r1, va_list ap)
 
 /***************************************************************************/
 
+enum {
+  OBJ_DICT_DEFAULT_SIZE = 32
+};
+
+static void
+_obj_dict_new(struct obj_vm *vm, unsigned r1, va_list ap)
+{
+#if 0
+  /** @todo Complete */
+
+  struct obj *q = obj_vm_reg(vm, va_arg(ap, unsigned));
+
+  switch (_obj_type(q)) {
+  case OBJ_TYPE_INTEGER:
+    if (q->val.intval < 0) {
+      vm->errno = OBJ_ERRNO_BAD_VALUE;
+      return;
+    }
+    __obj_array_new(vm, OBJ_TYPE_DICT, q->val.intval);
+    break;
+  case OBJ_TYPE_NIL:
+  case OBJ_TYPE_LIST:
+    {
+      for ( ; q && _obj_type(q->val.dptrval.car) == OBJ_TYPE_PAIR; q = q->val.dptrval.cdr);
+      if (q == 0) {
+      
+	pp = __obj_array_new(vm, OBJ_TYPE_DICT, OBJ_DICT_DEFAULT_SIZE);
+
+      }
+      
+      r = obj_vm_reg(vm, va_arg(ap, unsigned));
+      if (_obj_type(r) != OBJ_TYPE_LIST) {
+
+	pp = __obj_array_new(vm, OBJ_TYPE_DICT, OBJ_DICT_DEFAULT_SIZE);
+
+
+
+      }
+
+      
+
+
+    }
+    break;
+  case OBJ_TYPE_ARRAY:
+    break;
+  case OBJ_TYPE_DICT:
+    break;
+  default:
+    vm->errno = OBJ_ERRNO_BAD_TYPE;
+    return;
+  }
+
+  obj_vm_pop(vm, r1);
+
+#endif
+}
+
 static void
 _obj_dict_find(struct obj_vm *vm, struct obj *dict, struct obj *key, struct obj ***pbucket, struct obj ***pprev)
 {
@@ -1942,7 +2124,7 @@ _obj_dict_find(struct obj_vm *vm, struct obj *dict, struct obj *key, struct obj 
   qq = _obj_vm_reg(vm, 2);
 
   _obj_assign(vm, pp, key);
-  obj_method_call(vm, 1, OBJ_OP_HASH);
+  obj_vm_method_call(vm, 1, OBJ_OP_HASH);
   bucket = &dict->val.dictval.base.data[(*pp)->val.intval % dict->val.dictval.base.size];
   if (pbucket)  *pbucket = bucket;
 
@@ -1950,7 +2132,7 @@ _obj_dict_find(struct obj_vm *vm, struct obj *dict, struct obj *key, struct obj 
   for (rr = bucket; r = *rr; rr = &r->val.dptrval.cdr) {
     _obj_assign(vm, pp, r->val.dptrval.car->val.dptrval.car);
     _obj_assign(vm, qq, key);
-    obj_method_call(vm, 1, OBJ_OP_EQ, 2);
+    obj_vm_method_call(vm, 1, OBJ_OP_EQ, 2);
     if ((*pp)->val.boolval) {
       *pprev = rr;
       break;
@@ -1959,6 +2141,39 @@ _obj_dict_find(struct obj_vm *vm, struct obj *dict, struct obj *key, struct obj 
 
   obj_vm_pop(vm, 2);
   obj_vm_pop(vm, 1);
+}
+
+static void
+obj_dict_append(struct obj_vm *vm, unsigned r1, va_list ap)
+{
+  struct obj *p =obj_vm_reg(vm, r1), *q = obj_vm_reg(vm, va_arg(ap, unsigned));
+  struct obj **qq, *r;
+  unsigned   n;
+
+  switch (_obj_type(q)) {
+  case OBJ_TYPE_DICT:
+    obj_vm_push(vm, 1);
+    obj_vm_push(vm, 2);
+    obj_vm_push(vm, 3);
+
+    _obj_assign(vm, _obj_vm_reg(vm, 1), p);
+    for (qq = q->val.dictval.base.data, n = q->val.dictval.base.size; n; --n, ++q) {
+      for (r = *qq; r; r = r->val.dptrval.cdr) {
+	_obj_assign(vm, _obj_vm_reg(vm, 2), r->val.dptrval.car->val.dptrval.car);
+	_obj_assign(vm, _obj_vm_reg(vm, 3), r->val.dptrval.car->val.dptrval.cdr);
+	obj_vm_method_call(vm, 1, OBJ_OP_AT_PUT, 2, 3);
+      }
+    }
+
+    obj_vm_pop(vm, 3);
+    obj_vm_pop(vm, 2);
+    obj_vm_pop(vm, 1); 
+
+    break;
+  default:
+    vm->errno = OBJ_ERRNO_BAD_TYPE;
+    return;
+  }
 }
 
 static void
@@ -2166,8 +2381,8 @@ static void (* const op_func_tbl[OBJ_NUM_TYPES][OBJ_NUM_OPS])(struct obj_vm *, u
     0,				/* OBJ_OP_CAR */
     0,				/* OBJ_OP_CDR */
     0,				/* OBJ_OP_COUNT */
-    0,				/* OBJ_OP_DIV */
     0,				/* OBJ_OP_DEL */
+    0,				/* OBJ_OP_DIV */
     obj_string_eq,		/* OBJ_OP_EQ */
     obj_string_gt,		/* OBJ_OP_GT */
     obj_string_hash,		/* OBJ_OP_HASH */
@@ -2199,6 +2414,10 @@ static void (* const op_func_tbl[OBJ_NUM_TYPES][OBJ_NUM_OPS])(struct obj_vm *, u
   { 0
   },
 
+  /* OBJ_TYPE_BITS */
+  { 0
+  },
+
   /* OBJ_TYPE_DPTR */
   { 0,				/* OBJ_OP_ABS */
     0,				/* OBJ_OP_ADD */
@@ -2209,8 +2428,8 @@ static void (* const op_func_tbl[OBJ_NUM_TYPES][OBJ_NUM_OPS])(struct obj_vm *, u
     obj_dptr_car,		/* OBJ_OP_CAR */
     obj_dptr_cdr,		/* OBJ_OP_CDR */
     0,				/* OBJ_OP_COUNT */
-    0,				/* OBJ_OP_DIV */
     0,				/* OBJ_OP_DEL */
+    0,				/* OBJ_OP_DIV */
     0,				/* OBJ_OP_EQ */
     0,				/* OBJ_OP_GT */
     0,				/* OBJ_OP_HASH */
@@ -2236,8 +2455,8 @@ static void (* const op_func_tbl[OBJ_NUM_TYPES][OBJ_NUM_OPS])(struct obj_vm *, u
     0,				/* OBJ_OP_CAR */
     0,				/* OBJ_OP_CDR */
     0,				/* OBJ_OP_COUNT */
-    0,				/* OBJ_OP_DIV */
     0,				/* OBJ_OP_DEL */
+    0,				/* OBJ_OP_DIV */
     obj_pair_eq,		/* OBJ_OP_EQ */
     0,				/* OBJ_OP_GT */
     obj_pair_hash,		/* OBJ_OP_HASH */
@@ -2263,8 +2482,8 @@ static void (* const op_func_tbl[OBJ_NUM_TYPES][OBJ_NUM_OPS])(struct obj_vm *, u
     0,				/* OBJ_OP_CAR */
     0,				/* OBJ_OP_CDR */
     0,				/* OBJ_OP_COUNT */
-    0,				/* OBJ_OP_DIV */
     0,				/* OBJ_OP_DEL */
+    0,				/* OBJ_OP_DIV */
     obj_list_eq,		/* OBJ_OP_EQ */
     0,				/* OBJ_OP_GT */
     obj_list_hash,		/* OBJ_OP_HASH */
@@ -2273,6 +2492,7 @@ static void (* const op_func_tbl[OBJ_NUM_TYPES][OBJ_NUM_OPS])(struct obj_vm *, u
     0,				/* OBJ_OP_MINUS */
     0,				/* OBJ_OP_MOD */
     0,				/* OBJ_OP_MULT */
+    0,				/* OBJ_OP_NOT */
     0,				/* OBJ_OP_OR */
     obj_list_size,		/* OBJ_OP_SIZE */
     obj_list_slice,		/* OBJ_OP_SLICE */
@@ -2289,8 +2509,8 @@ static void (* const op_func_tbl[OBJ_NUM_TYPES][OBJ_NUM_OPS])(struct obj_vm *, u
     0,				/* OBJ_OP_CAR */
     0,				/* OBJ_OP_CDR */
     0,				/* OBJ_OP_COUNT */
-    0,				/* OBJ_OP_DIV */
     0,				/* OBJ_OP_DEL */
+    0,				/* OBJ_OP_DIV */
     0,				/* OBJ_OP_EQ */
     0,				/* OBJ_OP_GT */
     0,				/* OBJ_OP_HASH */
@@ -2310,7 +2530,7 @@ static void (* const op_func_tbl[OBJ_NUM_TYPES][OBJ_NUM_OPS])(struct obj_vm *, u
   { 0,				/* OBJ_OP_ABS */
     0,				/* OBJ_OP_ADD */
     0,				/* OBJ_OP_AND */
-    0,				/* OBJ_OP_APPEND */
+    obj_dict_append,		/* OBJ_OP_APPEND */
     obj_dict_at,		/* OBJ_OP_AT */
     obj_dict_at_put,		/* OBJ_OP_AT_PUT */
     0,				/* OBJ_OP_CAR */
@@ -2329,7 +2549,7 @@ static void (* const op_func_tbl[OBJ_NUM_TYPES][OBJ_NUM_OPS])(struct obj_vm *, u
     0,				/* OBJ_OP_NOT */
     0,				/* OBJ_OP_OR */
     0,				/* OBJ_OP_SIZE */
-    0,				/* OBJ_OP_SLICE */
+    obj_bad_method,		/* OBJ_OP_SLICE */
     0				/* OBJ_OP_SUB */
   }
 };
@@ -2337,7 +2557,7 @@ static void (* const op_func_tbl[OBJ_NUM_TYPES][OBJ_NUM_OPS])(struct obj_vm *, u
 /***************************************************************************/
 
 void
-obj_newr(struct obj_vm *vm, unsigned r1, unsigned type, ...)
+obj_vm_newc(struct obj_vm *vm, unsigned r1, unsigned type, ...)
 {
   va_list ap;
 
@@ -2376,7 +2596,7 @@ obj_newr(struct obj_vm *vm, unsigned r1, unsigned type, ...)
 }
 
 void
-obj_new(struct obj_vm *vm, unsigned r1, unsigned type, ...)
+obj_vm_new(struct obj_vm *vm, unsigned r1, unsigned type, ...)
 {
   va_list ap;
 
@@ -2406,6 +2626,12 @@ obj_new(struct obj_vm *vm, unsigned r1, unsigned type, ...)
   case OBJ_TYPE_LIST:
     _obj_list_new(vm, r1, ap);
     break;
+  case OBJ_TYPE_ARRAY:
+    _obj_array_new(vm, r1, ap);
+    break;
+  case OBJ_TYPE_DICT:
+    _obj_dict_new(vm, r1, ap);
+    break;
   default:
     assert(0);
   }
@@ -2414,7 +2640,7 @@ obj_new(struct obj_vm *vm, unsigned r1, unsigned type, ...)
 }
 
 void
-obj_method_call(struct obj_vm *vm, unsigned r1, unsigned op, ...)
+obj_vm_method_call(struct obj_vm *vm, unsigned r1, unsigned op, ...)
 {
   va_list  ap;
   unsigned type;
@@ -2449,7 +2675,7 @@ obj_method_call(struct obj_vm *vm, unsigned r1, unsigned op, ...)
 void
 obj_set_new(struct obj_vm *vm)
 {
-  obj_newr(vm, R0, OBJ_TYPE_DICT, 32);
+  obj_vm_newc(vm, R0, OBJ_TYPE_DICT, 32);
 }
 
 void
@@ -2461,11 +2687,28 @@ obj_set_insert(struct obj_vm *vm)
 
   obj_vm_pick(vm, R1, 3);
   obj_vm_pick(vm, R2, 4);
-  obj_new(vm, R3, OBJ_TYPE_NIL);
+  obj_vm_new(vm, R3, OBJ_TYPE_NIL);
 
-  obj_method_call(vm, R1, OBJ_OP_AT_PUT, R2, R3);
+  obj_vm_method_call(vm, R1, OBJ_OP_AT_PUT, R2, R3);
 
   obj_vm_pop(vm, R3);
+  obj_vm_pop(vm, R2);
+  obj_vm_pop(vm, R1);
+  
+  obj_vm_dropn(vm, 2);
+}
+
+void
+obj_set_del(struct obj_vm *vm)
+{
+  obj_vm_push(vm, R1);
+  obj_vm_push(vm, R2);
+
+  obj_vm_pick(vm, R1, 2);
+  obj_vm_pick(vm, R2, 3);
+
+  obj_vm_method_call(vm, R1, OBJ_OP_DEL, R2);
+
   obj_vm_pop(vm, R2);
   obj_vm_pop(vm, R1);
   
@@ -2480,11 +2723,11 @@ obj_set_member(struct obj_vm *vm)
 
   obj_vm_pick(vm, R0, 2);
   obj_vm_pick(vm, R1, 3);
-  obj_new(vm, R2, OBJ_TYPE_NIL);
+  obj_vm_new(vm, R2, OBJ_TYPE_NIL);
 
-  obj_method_call(vm, R0, OBJ_OP_AT, R1);
-  obj_method_call(vm, R0, OBJ_OP_EQ, R2);
-  obj_method_call(vm, R0, OBJ_OP_NOT);
+  obj_vm_method_call(vm, R0, OBJ_OP_AT, R1);
+  obj_vm_method_call(vm, R0, OBJ_OP_EQ, R2);
+  obj_vm_method_call(vm, R0, OBJ_OP_NOT);
 
   obj_vm_pop(vm, R2);
   obj_vm_pop(vm, R1);
@@ -2492,6 +2735,53 @@ obj_set_member(struct obj_vm *vm)
   obj_vm_dropn(vm, 2);
 }
 
+void
+obj_set_members(struct obj_vm *vm)
+{
+  obj_vm_pop(vm, R0);
+  obj_vm_method_call(vm, R0, OBJ_OP_KEYS);
+}
+
+/*
+ * list item -- list
+ */
+
+void
+obj_list_cons(struct obj_vm *vm)
+{
+  obj_vm_push(vm, R1);
+  obj_vm_push(vm, R2);
+
+  obj_vm_pick(vm, R0, 2);
+  obj_vm_pick(vm, R1, 3);
+  obj_vm_new(vm, R0, OBJ_TYPE_LIST, R0);
+  obj_vm_method_call(vm, R0, OBJ_OP_APPEND, R1);
+
+  obj_vm_pop(vm, R2);
+  obj_vm_pop(vm, R1);
+  
+  obj_vm_dropn(vm, 2);
+}
+
+void
+obj_fprint(struct obj_vm *vm, FILE *fp)
+{
+  obj_vm_push(vm, R1);
+
+  obj_vm_pick(vm, R1, 1);
+  obj_vm_new(vm, R1, OBJ_TYPE_STRING, R1);
+  fprintf(fp, "%s", obj_string_val(vm, R1));
+
+  obj_vm_pop(vm, R1);
+
+  obj_vm_drop(vm);
+}
+
+void
+obj_print(struct obj_vm *vm)
+{
+  obj_fprint(vm, stdout);
+}
 
 int
 main(void)
@@ -2500,125 +2790,165 @@ main(void)
 
   obj_vm_init(vm, 1000, 1000);
 
-  obj_set_new(vm);
-  obj_newr(vm, R1, OBJ_TYPE_STRING, "foo");
-
-  obj_vm_push(vm, R1);
-  obj_vm_push(vm, R0);
-  obj_set_insert(vm);
-
-  obj_vm_push(vm, R1);
-  obj_vm_push(vm, R0);
-  obj_set_member(vm);
-  printf("%s\n", obj_bool_val(vm, R0) ? "yes" : "no");
-
 #if 0
-  obj_newr(vm, R0, OBJ_TYPE_INTEGER, (obj_integer_val_t) 0);
-  obj_newr(vm, R1, OBJ_TYPE_INTEGER, (obj_integer_val_t) 10000000);
-  obj_newr(vm, R2, OBJ_TYPE_INTEGER, (obj_integer_val_t) 1);
-  for (;;) {
-    obj_vm_move(vm, R3, R0);
-    obj_method_call(vm, R3, OBJ_OP_LT, R1);
-    if (!obj_bool_val(vm, R3))  break;
-    obj_method_call(vm, R0, OBJ_OP_ADD, R2);
-  }
+  obj_vm_newc(vm, R1, OBJ_TYPE_STRING, "foo");
+  obj_vm_newc(vm, R2, OBJ_TYPE_INTEGER, 42LL);
+  obj_vm_new(vm, R2, OBJ_TYPE_LIST, R2);
+
+  obj_vm_push(vm, R2);
+  obj_vm_push(vm, R1);
+  obj_list_cons(vm);
+
+  obj_vm_push(vm, R0);  obj_print(vm);  printf("\n");
 #endif
 
 #if 0
-  obj_newr(vm, R0, OBJ_TYPE_INTEGER, (obj_integer_val_t) 1234);
-  obj_newr(vm, R1, OBJ_TYPE_INTEGER, (obj_integer_val_t) 5678);
-  obj_method_call(vm, R0, OBJ_OP_ADD, R1);
-  obj_new(vm, R1, OBJ_TYPE_STRING, R0);
+  obj_set_new(vm);
+  obj_vm_move(vm, R1, R0);
 
-  obj_new(vm, R4, OBJ_TYPE_PAIR, R0, R1);
+  obj_vm_newc(vm, R2, OBJ_TYPE_STRING, "foo");
+  obj_vm_push(vm, R2);
+  obj_vm_push(vm, R1);
+  obj_set_insert(vm);
+
+  obj_vm_push(vm, R2);
+  obj_vm_push(vm, R1);
+  obj_set_member(vm);
+
+  obj_vm_push(vm, R0);  obj_print(vm);  printf("\n");
+
+  obj_vm_newc(vm, R2, OBJ_TYPE_STRING, "sam");
+  obj_vm_push(vm, R2);
+  obj_vm_push(vm, R1);
+  obj_set_insert(vm);
+
+  obj_vm_newc(vm, R2, OBJ_TYPE_STRING, "foo");
+  obj_vm_push(vm, R2);
+  obj_vm_push(vm, R1);
+  obj_set_insert(vm);
+
+  obj_vm_newc(vm, R2, OBJ_TYPE_STRING, "bar");
+  obj_vm_push(vm, R2);
+  obj_vm_push(vm, R1);
+  obj_set_insert(vm);
+
+  obj_vm_push(vm, R1);
+  obj_set_members(vm);
+
+  obj_vm_push(vm, R0);  obj_print();
+
+  obj_vm_push(vm, R1);
+  obj_set_members(vm);
+  obj_vm_newc(vm, R3, OBJ_TYPE_INTEGER, 1);
+  obj_vm_newc(vm, R4, OBJ_TYPE_INTEGER, 1);
+  obj_vm_method_call(vm, R0, OBJ_OP_SLICE, R3, R4);
+
+  obj_vm_push(vm, R0);  obj_print();
+#endif
+
+#if 0
+  obj_vm_newc(vm, R0, OBJ_TYPE_INTEGER, (obj_integer_val_t) 0);
+  obj_vm_newc(vm, R1, OBJ_TYPE_INTEGER, (obj_integer_val_t) 10000000);
+  obj_vm_newc(vm, R2, OBJ_TYPE_INTEGER, (obj_integer_val_t) 1);
+  for (;;) {
+    obj_vm_move(vm, R3, R0);
+    obj_vm_method_call(vm, R3, OBJ_OP_LT, R1);
+    if (!obj_bool_val(vm, R3))  break;
+    obj_vm_method_call(vm, R0, OBJ_OP_ADD, R2);
+  }
+#endif
+
+#if 1
+  obj_vm_newc(vm, R0, OBJ_TYPE_INTEGER, (obj_integer_val_t) 1234);
+  obj_vm_newc(vm, R1, OBJ_TYPE_INTEGER, (obj_integer_val_t) 5678);
+  obj_vm_method_call(vm, R0, OBJ_OP_ADD, R1);
+  obj_vm_new(vm, R1, OBJ_TYPE_STRING, R0);
+
+  obj_vm_new(vm, R4, OBJ_TYPE_PAIR, R0, R1);
   obj_vm_move(vm, R5, R4);
-  obj_method_call(vm, R5, OBJ_OP_CAR);
+  obj_vm_method_call(vm, R5, OBJ_OP_CAR);
 
   printf("%lld", obj_integer_val(vm, R5));
   printf("%s", obj_string_val(vm, R1));
 
-  obj_newr(vm, R0, OBJ_TYPE_INTEGER, (obj_integer_val_t) 0);
-  obj_newr(vm, R1, OBJ_TYPE_INTEGER, (obj_integer_val_t) 10);
-  obj_newr(vm, R2, OBJ_TYPE_INTEGER, (obj_integer_val_t) 1);
+  obj_vm_newc(vm, R0, OBJ_TYPE_INTEGER, (obj_integer_val_t) 0);
+  obj_vm_newc(vm, R1, OBJ_TYPE_INTEGER, (obj_integer_val_t) 10);
+  obj_vm_newc(vm, R2, OBJ_TYPE_INTEGER, (obj_integer_val_t) 1);
   for (;;) {
     obj_vm_move(vm, R3, R0);
-    obj_method_call(vm, R3, OBJ_OP_LT, R1);
+    obj_vm_method_call(vm, R3, OBJ_OP_LT, R1);
     if (!obj_bool_val(vm, R3))  break;
 
-    obj_new(vm, R3, OBJ_TYPE_STRING, R0);
-    printf("%s\n", obj_string_val(vm, R3));
+    obj_vm_push(vm, R0);  obj_print(vm);  printf("\n");
     
-    obj_method_call(vm, R0, OBJ_OP_ADD, R2);
+    obj_vm_method_call(vm, R0, OBJ_OP_ADD, R2);
   }
 
-  obj_newr(vm, R1, OBJ_TYPE_DICT, (obj_integer_val_t) 32);
+  obj_vm_newc(vm, R1, OBJ_TYPE_DICT, (obj_integer_val_t) 32);
 
-  obj_newr(vm, R2, OBJ_TYPE_STRING, "sam");
-  obj_newr(vm, R3, OBJ_TYPE_FLOAT, (obj_float_val_t) 3.14);
-  obj_method_call(vm, R1, OBJ_OP_AT_PUT, R2, R3);
+  obj_vm_newc(vm, R2, OBJ_TYPE_STRING, "sam");
+  obj_vm_newc(vm, R3, OBJ_TYPE_FLOAT, (obj_float_val_t) 3.14);
+  obj_vm_method_call(vm, R1, OBJ_OP_AT_PUT, R2, R3);
 
-  obj_newr(vm, R2, OBJ_TYPE_STRING, "foo");
-  obj_newr(vm, R3, OBJ_TYPE_INTEGER, (obj_integer_val_t) 42);
-  obj_method_call(vm, R1, OBJ_OP_AT_PUT, R2, R3);
+  obj_vm_newc(vm, R2, OBJ_TYPE_STRING, "foo");
+  obj_vm_newc(vm, R3, OBJ_TYPE_INTEGER, (obj_integer_val_t) 42);
+  obj_vm_method_call(vm, R1, OBJ_OP_AT_PUT, R2, R3);
 
-  obj_newr(vm, R2, OBJ_TYPE_STRING, "bar");
-  obj_newr(vm, R3, OBJ_TYPE_STRING, "xxx");
-  obj_method_call(vm, R1, OBJ_OP_AT_PUT, R2, R3);
-
-  obj_new(vm, R4, OBJ_TYPE_STRING, R1);
-  printf("%s\n", obj_string_val(vm, R4));
+  obj_vm_newc(vm, R2, OBJ_TYPE_STRING, "bar");
+  obj_vm_newc(vm, R3, OBJ_TYPE_STRING, "xxx");
+  obj_vm_method_call(vm, R1, OBJ_OP_AT_PUT, R2, R3);
+  
+  obj_vm_push(vm, R1);  obj_print(vm);  printf("\n");
 
   obj_vm_move(vm, R4, R1);
-  obj_method_call(vm, R4, OBJ_OP_KEYS);
-  obj_new(vm, R4, OBJ_TYPE_STRING, R4);
-  printf("%s\n", obj_string_val(vm, R4));
+  obj_vm_method_call(vm, R4, OBJ_OP_KEYS);
+
+  obj_vm_push(vm, R4);  obj_print(vm);  printf("\n");
 
   obj_vm_move(vm, R2, R1);
-  obj_newr(vm, R3, OBJ_TYPE_STRING, "foo");
-  obj_method_call(vm, R2, OBJ_OP_AT, R3);
-  obj_new(vm, R2, OBJ_TYPE_STRING, R2);
-  printf("%s\n", obj_string_val(vm, R2));
+  obj_vm_newc(vm, R3, OBJ_TYPE_STRING, "foo");
+  obj_vm_method_call(vm, R2, OBJ_OP_AT, R3);
+
+  obj_vm_push(vm, R2);  obj_print(vm);  printf("\n");
 
   obj_vm_move(vm, R2, R1);
-  obj_newr(vm, R3, OBJ_TYPE_STRING, "sam");
-  obj_method_call(vm, R2, OBJ_OP_AT, R3);
-  obj_new(vm, R2, OBJ_TYPE_STRING, R2);
-  printf("%s\n", obj_string_val(vm, R2));
+  obj_vm_newc(vm, R3, OBJ_TYPE_STRING, "sam");
+  obj_vm_method_call(vm, R2, OBJ_OP_AT, R3);
+
+  obj_vm_push(vm, R2);  obj_print(vm);  printf("\n");
 
   obj_vm_move(vm, R2, R1);
-  obj_newr(vm, R3, OBJ_TYPE_STRING, "gorp");
-  obj_method_call(vm, R2, OBJ_OP_AT, R3);
-  assert(obj_type(vm, R2) == OBJ_TYPE_NIL);
+  obj_vm_newc(vm, R3, OBJ_TYPE_STRING, "gorp");
+  obj_vm_method_call(vm, R2, OBJ_OP_AT, R3);
+  assert(obj_vm_type(vm, R2) == OBJ_TYPE_NIL);
 
-  obj_newr(vm, R2, OBJ_TYPE_STRING, "foo");
-  obj_method_call(vm, R1, OBJ_OP_DEL, R2);
+  obj_vm_newc(vm, R2, OBJ_TYPE_STRING, "foo");
+  obj_vm_method_call(vm, R1, OBJ_OP_DEL, R2);
 
-  obj_new(vm, R4, OBJ_TYPE_STRING, R1);
-  printf("%s\n", obj_string_val(vm, R4));
+  obj_vm_push(vm, R1);  obj_print(vm);  printf("\n");
 
-  obj_newr(vm, R1, OBJ_TYPE_STRING, "The cat in the hat");
-  obj_newr(vm, R2, OBJ_TYPE_INTEGER, -5);
-  obj_newr(vm, R3, OBJ_TYPE_INTEGER, -5);
+  obj_vm_newc(vm, R1, OBJ_TYPE_STRING, "The cat in the hat");
+  obj_vm_newc(vm, R2, OBJ_TYPE_INTEGER, -5);
+  obj_vm_newc(vm, R3, OBJ_TYPE_INTEGER, -5);
   obj_vm_move(vm, R4, R1);
-  obj_method_call(vm, R4, OBJ_OP_SLICE, R2, R3);
-  printf("\"%s\"\n", obj_string_val(vm, R4));
+  obj_vm_method_call(vm, R4, OBJ_OP_SLICE, R2, R3);
+
+  obj_vm_push(vm, R4);  obj_print(vm);  printf("\n");
 #endif
   
 #if 0
   obj_vm_mode(vm, R4, R1);
-  obj_method_call(vm, R4, OBJ_OP_AT, R2);
+  obj_vm_method_call(vm, R4, OBJ_OP_AT, R2);
   obj_vm_move(vm, R2, R1);
-  obj_method_call(vm, R2, OBJ_OP_CAR);
-  obj_new(vm, R3, OBJ_TYPE_STRING, R2);
-  printf("%s\n", obj_string_val(vm, R3));
-  obj_vm_move(vm, R2, R1);
-  obj_method_call(vm, R2, OBJ_OP_CDR);
-  obj_new(vm, R3, OBJ_TYPE_STRING, R2);
-  printf("%s\n", obj_string_val(vm, R3));
-#endif
-  
-  
+  obj_vm_method_call(vm, R2, OBJ_OP_CAR);
 
+  obj_vm_push(vm, R2);  obj_print(vm);  printf("\n");
+
+  obj_vm_move(vm, R2, R1);
+  obj_vm_method_call(vm, R2, OBJ_OP_CDR);
+
+  obj_vm_push(vm, R2);  obj_print(vm);  printf("\n");
+#endif
   
   return (0);  
 }
