@@ -4,7 +4,7 @@
 #include <assert.h>
 #include <stdio.h>
 
-#include "obj4.h"
+#include "ovm.h"
 
 #define _ARRAY_SIZE(a)  (sizeof(a) / sizeof((a)[0]))
 

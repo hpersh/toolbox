@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "obj4.h"
+#include "ovm.h"
 
 #define _ARRAY_SIZE(a)  (sizeof(a) / sizeof((a)[0]))
 
@@ -196,7 +196,7 @@ main(void)
   ovm_push(vm, R0);  obj_print(vm);  printf("\n");
 #endif
 
-#if 0
+#if 1
   ovm_newc(vm, R0, OBJ_TYPE_INTEGER, (obj_integer_val_t) 0);
   ovm_newc(vm, R1, OBJ_TYPE_INTEGER, (obj_integer_val_t) 10000000);
   ovm_newc(vm, R2, OBJ_TYPE_INTEGER, (obj_integer_val_t) 1);
@@ -386,7 +386,7 @@ main(void)
 
 #endif
 
-#if 1
+#if 0
 
   {
     static char cmd_dict[] = "{"
