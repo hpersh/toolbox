@@ -1,3 +1,11 @@
+/** ************************************************************************
+
+\file ovm.c
+
+OVM, an Object Virtual Machine for C
+
+***************************************************************************/
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
@@ -95,41 +103,6 @@ is_list(struct obj *p)
     return (1);
   default:
     ;
-  }
-
-  return (0);
-}
-
-static unsigned
-obj_type_parent(unsigned type)
-{
-  switch (type) {
-  case OBJ_TYPE_NIL:
-  case OBJ_TYPE_POINTER:
-  case OBJ_TYPE_BOOLEAN:
-  case OBJ_TYPE_NUMBER:
-  case OBJ_TYPE_BLOCK:
-  case OBJ_TYPE_DPTR:
-    return (OBJ_TYPE_OBJECT);
-  case OBJ_TYPE_INTEGER:
-  case OBJ_TYPE_FLOAT:
-    return (OBJ_TYPE_NUMBER);
-  case OBJ_TYPE_STRING:
-  case OBJ_TYPE_BYTES:
-  case OBJ_TYPE_WORDS:
-  case OBJ_TYPE_DWORDS:
-  case OBJ_TYPE_QWORDS:
-  case OBJ_TYPE_ARRAY:
-    return (OBJ_TYPE_BLOCK);
-  case OBJ_TYPE_BITS:
-    return (OBJ_TYPE_DWORDS);
-  case OBJ_TYPE_PAIR:
-  case OBJ_TYPE_LIST:
-    return (OBJ_TYPE_DPTR);
-  case OBJ_TYPE_DICT:
-    return (OBJ_TYPE_ARRAY);
-  default:
-    assert(0);
   }
 
   return (0);
@@ -3232,29 +3205,30 @@ void (*op_func_tbl[OBJ_NUM_TYPES][OBJ_NUM_OPS])(struct ovm *, struct obj **, va_
 
 /***************************************************************************/
 
+/** ************************************************************************
+
+\brief Intialize VM
+
+\param[in] vm            VM instance
+\param[in] obj_pool_size Size of memory region to use as object pool, in bytes
+\param[in] obj_pool      Start of memory region to use as object pool
+\param[in] work_size     Size of memory region to use as object working storage, in bytes
+\param[in] work          Start of memory region to use as object working storage
+\param[in] stack_size    Size of memory region to use as object stack, in bytes
+\param[in] stack         Start of memory region to use as object stack
+
+\returns Nothing
+
+*/
+
 void
-ovm_fini(struct ovm *vm)
-{
-  /** @todo Free all obj data (strings, arrays) */
-
-  unsigned i;
-
-  for (i = 0; i < _ARRAY_SIZE(vm->cl_tbl); ++i) {
-    obj_free(vm, vm->cl_tbl[i]);
-  }
-  
-  if (vm->obj_pool)  free(vm->obj_pool);
-  if (vm->stack)     free(vm->stack);
-}
-
-void
-ovm_init(struct ovm *vm,
-	    unsigned      obj_pool_size,
-	    void          *obj_pool,
-	    unsigned      work_size,
-	    void          *work,
-	    unsigned      stack_size,
-	    void          *stack
+ovm_init(struct ovm  *vm,
+	    unsigned obj_pool_size,
+	    void     *obj_pool,
+	    unsigned work_size,
+	    void     *work,
+	    unsigned stack_size,
+	    void     *stack
 	    )
 {
   struct _list *li;
@@ -3294,11 +3268,64 @@ ovm_init(struct ovm *vm,
   if (vm->errno != OBJ_ERRNO_NONE)  ovm_fini(vm);
 }
 
+/** ************************************************************************
+
+\brief Free resources used by VM
+
+\param[in] vm VM instance
+
+\returns Nothing
+
+*/
+
+void
+ovm_fini(struct ovm *vm)
+{
+  struct _list *li, *p;
+
+  li = &vm->obj_list._list[vm->obj_list.idx_alloced];
+  for (p = list_first(li); p != list_end(li); p = list_next(p)) {
+    obj_t q = FIELD_PTR_TO_STRUCT_PTR(p, struct obj, _list_node);
+
+    switch (obj_type(q)) {
+    case OBJ_TYPE_STRING:
+      free(STR_DATA(q));
+      break;
+    case OBJ_TYPE_ARRAY:
+    case OBJ_TYPE_DICT:
+      free(ARRAY_DATA(q));
+    }
+  }
+}
+
+/** ************************************************************************
+
+\brief Copy object from stack into register
+
+\param[in] vm  VM instance
+\param[in] r1  Register to load
+\param[in] ofs Offset into stack
+
+\returns Nothing
+
+*/
+
 void
 ovm_pick(struct ovm *vm, unsigned r1, unsigned ofs)
 {
   obj_assign(vm, _ovm_reg(vm, r1), *_ovm_pick(vm, ofs));
 }
+
+/** ************************************************************************
+
+\brief Drop objects from stack
+
+\param[in] vm VM instance
+\param[in] n  Number of objects to drop
+
+\returns Nothing
+
+*/
 
 void
 ovm_dropn(struct ovm *vm, unsigned n)
@@ -3313,11 +3340,33 @@ ovm_dropn(struct ovm *vm, unsigned n)
   vm->sp += n;
 }
 
+/** ************************************************************************
+
+\brief Drop object from stack
+
+\param[in] vm VM instance
+
+\returns Nothing
+
+*/
+
 void
 ovm_drop(struct ovm *vm)
 {
   ovm_dropn(vm, 1);
 }
+
+/** ************************************************************************
+
+\brief Pop registers from stack
+
+\param[in] vm VM instance
+\param[in] r1 Starting register to pop
+\param[in] n  Number of registers to pop
+
+\returns Nothing
+
+*/
 
 void
 ovm_popm(struct ovm *vm, unsigned r1, unsigned n)
@@ -3333,11 +3382,34 @@ ovm_popm(struct ovm *vm, unsigned r1, unsigned n)
   }
 }
 
+/** ************************************************************************
+
+\brief Pop a register from stack
+
+\param[in] vm VM instance
+\param[in] r1 Register to pop
+
+\returns Nothing
+
+*/
+
 void
 ovm_pop(struct ovm *vm, unsigned r1)
 {
   ovm_popm(vm, r1, 1);
 }
+
+/** ************************************************************************
+
+\brief Push registers onto stack
+
+\param[in] vm VM instance
+\param[in] r1 Starting register to push
+\param[in] n  Number of registers to push
+
+\returns Nothing
+
+*/
 
 void
 ovm_pushm(struct ovm *vm, unsigned r1, unsigned n)
@@ -3354,11 +3426,34 @@ ovm_pushm(struct ovm *vm, unsigned r1, unsigned n)
   }
 }
 
+/** ************************************************************************
+
+\brief Push register onto stack
+
+\param[in] vm VM instance
+\param[in] r1 Register to push
+
+\returns Nothing
+
+*/
+
 void
 ovm_push(struct ovm *vm, unsigned r1)
 {
   ovm_pushm(vm, r1, 1);
 }
+
+/** ************************************************************************
+
+\brief Load register
+
+\param[in] vm   VM instance
+\param[in] r1   Register to load
+\param[in] work Address in working memory to load from
+
+\returns Nothing
+
+*/
 
 void
 ovm_load(struct ovm *vm, unsigned r1, obj_t *work)
@@ -3368,6 +3463,18 @@ ovm_load(struct ovm *vm, unsigned r1, obj_t *work)
   obj_assign(vm, _ovm_reg(vm, r1), *work);
 }
 
+/** ************************************************************************
+
+\brief Store register
+
+\param[in] vm   VM instance
+\param[in] r1   Register to store
+\param[in] work Address in working memory to store to
+
+\returns Nothing
+
+*/
+
 void
 ovm_store(struct ovm *vm, unsigned r1, obj_t *work)
 {
@@ -3376,21 +3483,79 @@ ovm_store(struct ovm *vm, unsigned r1, obj_t *work)
   obj_assign(vm, work, *_ovm_reg(vm, r1));
 }
 
+/** ************************************************************************
+
+\brief Return type of object
+
+\param[in] vm   VM instance
+\param[in] r1   Register
+
+\returns Type of object in given register
+
+*/
+
 unsigned
 ovm_type(struct ovm *vm, unsigned r1)
 {
   return (obj_type(*_ovm_reg(vm, r1)));
 }
 
+/** ************************************************************************
+
+\brief Return parent type of given type
+
+\param[in] type Object type
+
+\returns Type which is parent of given type
+
+*/
+
 unsigned
-obj_type_is_subtype_of(unsigned type, unsigned parent)
+obj_type_parent(unsigned type)
 {
-  for ( ; type != OBJ_TYPE_OBJECT; type = obj_type_parent(type)) {
-    if (type == parent)  return (1);
+  switch (type) {
+  case OBJ_TYPE_NIL:
+  case OBJ_TYPE_POINTER:
+  case OBJ_TYPE_BOOLEAN:
+  case OBJ_TYPE_NUMBER:
+  case OBJ_TYPE_BLOCK:
+  case OBJ_TYPE_DPTR:
+    return (OBJ_TYPE_OBJECT);
+  case OBJ_TYPE_INTEGER:
+  case OBJ_TYPE_FLOAT:
+    return (OBJ_TYPE_NUMBER);
+  case OBJ_TYPE_STRING:
+  case OBJ_TYPE_BYTES:
+  case OBJ_TYPE_WORDS:
+  case OBJ_TYPE_DWORDS:
+  case OBJ_TYPE_QWORDS:
+  case OBJ_TYPE_ARRAY:
+    return (OBJ_TYPE_BLOCK);
+  case OBJ_TYPE_BITS:
+    return (OBJ_TYPE_DWORDS);
+  case OBJ_TYPE_PAIR:
+  case OBJ_TYPE_LIST:
+    return (OBJ_TYPE_DPTR);
+  case OBJ_TYPE_DICT:
+    return (OBJ_TYPE_ARRAY);
+  default:
+    assert(0);
   }
 
   return (0);
 }
+
+/** ************************************************************************
+
+\brief Copy object in one register to another
+
+\param[in] vm VM instance
+\param[in] r1 Destination register
+\param[in] r2 Source register
+
+\returns Nothing
+
+*/
 
 void
 ovm_move(struct ovm *vm, unsigned r1, unsigned r2)
@@ -3398,11 +3563,31 @@ ovm_move(struct ovm *vm, unsigned r1, unsigned r2)
   obj_assign(vm, _ovm_reg(vm, r1), *_ovm_reg(vm, r2));
 }
 
+/** ************************************************************************
+
+\brief Return current error code
+
+\param[in] vm VM instance
+
+\returns Current error code
+
+*/
+
 int
 ovm_errno(struct ovm *vm)
 {
   return (vm->errno);
 }
+
+/** ************************************************************************
+
+\brief Clear error state
+
+\param[in] vm VM instance
+
+\returns Nothing
+
+*/
 
 void
 ovm_err_clr(struct ovm *vm)
@@ -3410,11 +3595,34 @@ ovm_err_clr(struct ovm *vm)
   vm->errno = OBJ_ERRNO_NONE;
 }
 
+/** ************************************************************************
+
+\brief Set error hook function
+
+\param[in] vm   VM instance
+\param[in] func Function to be called when an error occurs
+
+\returns Nothing
+
+*/
+
 void
 ovm_err_hook_set(struct ovm *vm, void (*func)(struct ovm *))
 {
   vm->err_hook = func;
 }
+
+/** ************************************************************************
+
+\brief Create and initialize a new object from a C value
+
+\param[in] vm   VM instance
+\param[in] r1   Destination register
+\param[in] type Type of object to be created
+
+\returns Nothing
+
+*/
 
 void
 ovm_newc(struct ovm *vm, unsigned r1, unsigned type, ...)
@@ -3462,11 +3670,36 @@ ovm_newc(struct ovm *vm, unsigned r1, unsigned type, ...)
   va_end(ap);
 }
 
+/** ************************************************************************
+
+\brief Create and initialize a new object from a string
+
+\param[in] vm  VM instance
+\param[in] r1  Destination register
+\param[in] len Length of string
+\param[in] s   Initialization string
+
+\returns Nothing
+
+*/
+
 void
 ovm_news(struct ovm *vm, unsigned r1, unsigned len, char *s)
 {
   obj_str_parse(vm, _ovm_reg(vm, r1), len, s);
 }
+
+/** ************************************************************************
+
+\brief Create and initialize a new object from another object
+
+\param[in] vm   VM instance
+\param[in] r1   Destination register
+\param[in] type Type of object to create
+
+\returns Nothing
+
+*/
 
 void
 ovm_new(struct ovm *vm, unsigned r1, unsigned type, ...)
@@ -3513,6 +3746,17 @@ ovm_new(struct ovm *vm, unsigned r1, unsigned type, ...)
   va_end(ap);
 }
 
+/** ************************************************************************
+
+\brief Call a method on an object
+
+\param[in] vm VM instance
+\param[in] r1 Destination register
+\param[in] op Operation to call
+
+\returns Nothing
+
+*/
 
 void
 ovm_call(struct ovm *vm, unsigned r1, unsigned op, ...)
@@ -3539,6 +3783,16 @@ ovm_call(struct ovm *vm, unsigned r1, unsigned op, ...)
   va_end(ap);
 }
 
+/** ************************************************************************
+
+\brief Return value of a pointer object
+
+\param[in] vm VM instance
+\param[in] r1 Source register
+
+\returns Pointer value
+
+*/
 
 void *
 ovm_ptr_val(struct ovm *vm, unsigned r1)
@@ -3550,6 +3804,17 @@ ovm_ptr_val(struct ovm *vm, unsigned r1)
   return (PTRVAL(p));
 }
 
+/** ************************************************************************
+
+\brief Return value of a boolean object
+
+\param[in] vm VM instance
+\param[in] r1 Source register
+
+\returns Boolean value
+
+*/
+
 unsigned
 ovm_bool_val(struct ovm *vm, unsigned r1)
 {
@@ -3559,6 +3824,17 @@ ovm_bool_val(struct ovm *vm, unsigned r1)
 
   return (BOOLVAL(p) != 0);
 }
+
+/** ************************************************************************
+
+\brief Return value of a integer object
+
+\param[in] vm VM instance
+\param[in] r1 Source register
+
+\returns Integer value
+
+*/
 
 obj_integer_val_t
 ovm_integer_val(struct ovm *vm, unsigned r1)
@@ -3570,6 +3846,17 @@ ovm_integer_val(struct ovm *vm, unsigned r1)
   return (INTVAL(p));
 }
 
+/** ************************************************************************
+
+\brief Return value of a floating-point object
+
+\param[in] vm VM instance
+\param[in] r1 Source register
+
+\returns Floating-point value
+
+*/
+
 obj_float_val_t
 ovm_float_val(struct ovm *vm, unsigned r1)
 {
@@ -3580,6 +3867,17 @@ ovm_float_val(struct ovm *vm, unsigned r1)
   return (FLOATVAL(p));
 }
 
+/** ************************************************************************
+
+\brief Return value of a string object
+
+\param[in] vm VM instance
+\param[in] r1 Source register
+
+\returns Pointer to string data
+
+*/
+
 char *
 ovm_string_val(struct ovm *vm, unsigned r1)
 {
@@ -3589,6 +3887,17 @@ ovm_string_val(struct ovm *vm, unsigned r1)
 
   return (STR_DATA(p));
 }
+
+/** ************************************************************************
+
+\brief Return length of a string object
+
+\param[in] vm VM instance
+\param[in] r1 Source register
+
+\returns Length of string
+
+*/
 
 unsigned
 ovm_string_size(struct ovm *vm, unsigned r1)

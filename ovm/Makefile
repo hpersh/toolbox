@@ -11,3 +11,8 @@ test: test.c libovm.so
 
 clean:
 	rm -f *.o *.so test
+
+.PHONY: doc
+
+doc:
+	doxygen

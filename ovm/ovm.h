@@ -1,3 +1,11 @@
+/** ************************************************************************
+
+\file ovm.h
+
+Public interface for Object Virtual Machine
+
+***************************************************************************/
+
 typedef long long   obj_integer_val_t;
 typedef long double obj_float_val_t;
 
@@ -15,20 +23,20 @@ enum obj_type {
   OBJ_TYPE_POINTER,
   OBJ_TYPE_BOOLEAN,		/**< Boolean */
   OBJ_TYPE_NUMBER,		/**< Number */
-  OBJ_TYPE_INTEGER,		/**< Integer */
-  OBJ_TYPE_FLOAT,
+  OBJ_TYPE_INTEGER,		/**< Fixed-point number */
+  OBJ_TYPE_FLOAT,		/**< Floating-point number  */
   OBJ_TYPE_BLOCK,
-  OBJ_TYPE_STRING,
+  OBJ_TYPE_STRING,		/**< String of characters */
   OBJ_TYPE_BYTES,
   OBJ_TYPE_WORDS,
   OBJ_TYPE_DWORDS,
   OBJ_TYPE_QWORDS,
   OBJ_TYPE_BITS,
-  OBJ_TYPE_DPTR,
-  OBJ_TYPE_PAIR,
-  OBJ_TYPE_LIST,
-  OBJ_TYPE_ARRAY,
-  OBJ_TYPE_DICT,
+  OBJ_TYPE_DPTR,		/**< Dual-pointer */
+  OBJ_TYPE_PAIR,		/**< Pair of objects */
+  OBJ_TYPE_LIST,		/**< List */
+  OBJ_TYPE_ARRAY,		/**< Array */
+  OBJ_TYPE_DICT,		/**< Dictionary */
   OBJ_TYPE_LAST,
 
   OBJ_NUM_TYPES  = OBJ_TYPE_LAST - OBJ_TYPE_BASE
@@ -117,13 +125,13 @@ struct ovm {
 };
 
 enum {
-  OBJ_ERRNO_NONE       = 0,
-  OBJ_ERRNO_MEM        = -1,
-  OBJ_ERRNO_BAD_METHOD = -2,
-  OBJ_ERRNO_BAD_REG    = -3,
-  OBJ_ERRNO_BAD_TYPE   = -4,
-  OBJ_ERRNO_BAD_VALUE  = -5,
-  OBJ_ERRNO_RANGE      = -6
+  OBJ_ERRNO_NONE       = 0,	/**< No error */
+  OBJ_ERRNO_MEM        = -1,	/**< Out of memory */
+  OBJ_ERRNO_BAD_METHOD = -2,	/**< Invalid method */
+  OBJ_ERRNO_BAD_REG    = -3,	/**< Invalid register */
+  OBJ_ERRNO_BAD_TYPE   = -4,	/**< Invalid type */
+  OBJ_ERRNO_BAD_VALUE  = -5,	/**< Invalid value */
+  OBJ_ERRNO_RANGE      = -6	/**< Index out of range */
 };
 
 #define R0  0
@@ -150,41 +158,41 @@ void ovm_load(struct ovm *vm, unsigned r1, obj_t *work);
 void ovm_store(struct ovm *vm, unsigned r1, obj_t *work);
 void ovm_cl_dict(struct ovm *vm, unsigned type, unsigned r1);
 unsigned ovm_type(struct ovm *vm, unsigned r1);
-unsigned obj_type_is_subtype_of(unsigned type, unsigned parent);
+unsigned obj_type_parent(unsigned type);
 
 enum obj_op {
-  OBJ_OP_ABS,
-  OBJ_OP_ADD,
-  OBJ_OP_AND,
-  OBJ_OP_APPEND,
-  OBJ_OP_AT,
-  OBJ_OP_AT_PUT,
-  OBJ_OP_CAR,
-  OBJ_OP_CDR,
-  OBJ_OP_COUNT,
-  OBJ_OP_DEL,
-  OBJ_OP_DIV,
-  OBJ_OP_EQ,
-  OBJ_OP_FILTER,
-  OBJ_OP_GT,
-  OBJ_OP_HASH,
-  OBJ_OP_JOIN,
-  OBJ_OP_KEYS,
+  OBJ_OP_ABS,			/**< Absoulte value */
+  OBJ_OP_ADD,			/**< Arithmetic add */
+  OBJ_OP_AND,			/**< Bitwise or boolean and */
+  OBJ_OP_APPEND,		/**< Append */
+  OBJ_OP_AT,			/**< Keyed collection lookup */
+  OBJ_OP_AT_PUT,		/**< Keyed collection update */
+  OBJ_OP_CAR,			/**< First element of pair or list */
+  OBJ_OP_CDR,			/**< Second element of pair, or rest of list */
+  OBJ_OP_COUNT,			/**< Number of objects in collection */
+  OBJ_OP_DEL,			/**< Keyed collection delete */
+  OBJ_OP_DIV,			/**< Arithmetic divide */
+  OBJ_OP_EQ,			/**< Test for equality */
+  OBJ_OP_FILTER,		/**< Apply boolean filter */
+  OBJ_OP_GT,			/**< Arithmetic > */
+  OBJ_OP_HASH,			/**< Hash */
+  OBJ_OP_JOIN,			/**< String join, with separator */
+  OBJ_OP_KEYS,			/**< Keys in keyed collection */
   /* OBJ_OP_LSH */
-  OBJ_OP_LT,
-  OBJ_OP_MINUS,
-  OBJ_OP_MOD,
-  OBJ_OP_MULT,
-  OBJ_OP_NOT,
-  OBJ_OP_OR,
-  OBJ_OP_REVERSE,
+  OBJ_OP_LT,			/**< Arithmetic < */
+  OBJ_OP_MINUS,			/**< Arithmetic negation */
+  OBJ_OP_MOD,			/**< Arithmetic modulus */
+  OBJ_OP_MULT,			/**< Arithmetic multiplication */
+  OBJ_OP_NOT,			/**< Bitwise one's complement or boolean negation */
+  OBJ_OP_OR,			/**< Bitwise or boolean or */
+  OBJ_OP_REVERSE,		/**< Reverse ordered collection */
   /* OBJ_OP_RSH */
-  OBJ_OP_SIZE,
-  OBJ_OP_SLICE,
-  OBJ_OP_SORT,
-  OBJ_OP_SPLIT,
-  OBJ_OP_SUB,
-  OBJ_OP_XOR,
+  OBJ_OP_SIZE,			/**< Size of collection */
+  OBJ_OP_SLICE,			/**< Slice subset of collection */
+  OBJ_OP_SORT,			/**< Sort collection */
+  OBJ_OP_SPLIT,			/**< Split string, with delimeter */
+  OBJ_OP_SUB,			/**< Arithmetic subtraction */
+  OBJ_OP_XOR,			/**< Bitwise or boolean exclusive-or */
   OBJ_NUM_OPS
 };
 
