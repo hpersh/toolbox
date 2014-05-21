@@ -12,7 +12,10 @@ typedef signed long long   int64;
 
 #define ARRAY_SIZE(a)  (sizeof(a) / sizeof((a)[0]))
 
-#define FIELD_OFS(s, f)                   ((int) &((s *) 0)->f)
+#define PTR_TO_INT(p)  ((unsigned long long)(p))
+
+#define FIELD_OFS(s, f)                   PTR_TO_INT(&((s *) 0)->f)
+#define FIELD_SIZE(s, f)                  (sizeof(((s *) 0)->f))
 #define FIELD_PTR_TO_STRUCT_PTR(p, s, f)  ((s *)((char *)(p) - FIELD_OFS(s, f)))
 
 #define MALLOC_T(t, n)  ((t *) malloc((n) * sizeof(t)))

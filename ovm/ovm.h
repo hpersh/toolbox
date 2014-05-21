@@ -198,13 +198,15 @@ enum obj_op {
 
 void ovm_call(struct ovm *vm, unsigned r1, unsigned op, ...);
 
+/* Constructors */
 void ovm_newc(struct ovm *vm, unsigned r1, unsigned type, ...);
 void ovm_new(struct ovm *vm, unsigned r1, unsigned type, ...);
 void ovm_news(struct ovm *vm, unsigned r1, unsigned len, char *s);
 
+/* Value extractors */
 void *            ovm_ptr_val(struct ovm *vm, unsigned r1);
 unsigned          ovm_bool_val(struct ovm *vm, unsigned r1);
 obj_integer_val_t ovm_integer_val(struct ovm *vm, unsigned r1);
 obj_float_val_t   ovm_float_val(struct ovm *vm, unsigned r1);
-char *            ovm_string_val(struct ovm *vm, unsigned r1);
 unsigned          ovm_string_size(struct ovm *vm, unsigned r1);
+char *            ovm_string_val(struct ovm *vm, unsigned r1);

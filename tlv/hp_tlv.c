@@ -190,6 +190,51 @@ hp_tlv_node_erase(struct hp_tlv_node *nd)
 }
 
 
+struct hp_tlv_node *
+hp_tlv_node_parent(struct hp_tlv_node *nd)
+{
+  return (nd->parent);
+}
+
+
+struct hp_tlv_node *
+hp_tlv_node_children(struct hp_tlv_node *nd)
+{
+  struct hp_list *p;
+
+  if  (nd->type != HP_TLV_TYPE_LIST)  return (0);
+  p = HP_LIST_FIRST(nd->val.listval);
+  if (p == HP_LIST_END(nd->val.listval))  return (0);
+  return (FIELD_PTR_TO_STRUCT_PTR(p, struct hp_tlv_node, siblings));
+}
+
+
+struct hp_tlv_node *
+hp_tlv_node_prev(struct hp_tlv_node *nd)
+{
+  struct hp_tlv_node *p;
+  struct hp_list *q;
+
+  if ((p = nd->parent) == 0)  return (0);
+  q = HP_LIST_PREV(nd->siblings);
+  if (q == HP_LIST_END(p->val.listval))  return (0);
+  return (FIELD_PTR_TO_STRUCT_PTR(q, struct hp_tlv_node, siblings));
+}
+
+
+struct hp_tlv_node *
+hp_tlv_node_next(struct hp_tlv_node *nd)
+{
+  struct hp_tlv_node *p;
+  struct hp_list *q;
+
+  if ((p = nd->parent) == 0)  return (0);
+  q = HP_LIST_NEXT(nd->siblings);
+  if (q == HP_LIST_END(p->val.listval))  return (0);
+  return (FIELD_PTR_TO_STRUCT_PTR(q, struct hp_tlv_node, siblings));
+}
+
+
 void
 hp_tlv_stream_init(struct hp_tlv_stream *st, unsigned len, unsigned char *buf)
 {
@@ -208,6 +253,12 @@ static unsigned
 tlv_stream_rem(struct hp_tlv_stream *st)
 {
   return (st->size - st->ofs);
+}
+
+unsigned
+hp_tlv_stream_eof(struct hp_tlv_stream *st)
+{
+  return (tlv_stream_rem(st) == 0);
 }
 
 static int
@@ -787,7 +838,7 @@ hp_tlv_parse_dom(struct hp_tlv_stream *st, struct hp_tlv_node **nd)
       
       *nd = p = hp_tlv_node_new(type);
 
-      for (hp_tlv_stream_init(sub, data_len, data); tlv_stream_rem(sub) != 0; ) {
+      for (hp_tlv_stream_init(sub, data_len, data); !hp_tlv_stream_eof(sub); ) {
 	if (hp_tlv_parse_dom(sub, &child) < 0)  return (-1);
 	hp_tlv_node_child_append(child, p);
       }

@@ -6,6 +6,14 @@ OVM, an Object Virtual Machine for C
 
 ***************************************************************************/
 
+/***************************************************************************
+
+\todo
+
+(1) Malloc instances, with instance cache and collection
+
+***************************************************************************/
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>

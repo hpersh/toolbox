@@ -56,6 +56,11 @@ struct hp_tlv_node *hp_tlv_node_child_insert(struct hp_tlv_node *nd, struct hp_t
 struct hp_tlv_node *hp_tlv_node_child_append(struct hp_tlv_node *nd, struct hp_tlv_node *parent);
 struct hp_tlv_node *hp_tlv_node_erase(struct hp_tlv_node *nd);
 
+struct hp_tlv_node *hp_tlv_node_parent(struct hp_tlv_node *nd);
+struct hp_tlv_node *hp_tlv_node_children(struct hp_tlv_node *nd);
+struct hp_tlv_node *hp_tlv_node_prev(struct hp_tlv_node *nd);
+struct hp_tlv_node *hp_tlv_node_next(struct hp_tlv_node *nd);
+
 struct hp_tlv_stream {
   unsigned char *buf;
   unsigned      size;
@@ -63,7 +68,8 @@ struct hp_tlv_stream {
 };
 typedef struct hp_tlv_stream hp_tlv_stream[1]; 
 
-void hp_tlv_stream_init(struct hp_tlv_stream *st, unsigned len, unsigned char *buf);
+void     hp_tlv_stream_init(struct hp_tlv_stream *st, unsigned len, unsigned char *buf);
+unsigned hp_tlv_stream_eof(struct hp_tlv_stream *st);
 
 int hp_tlv_tostring_nil(struct hp_tlv_stream *st);
 int hp_tlv_tostring_bool(struct hp_tlv_stream *st, unsigned val);
