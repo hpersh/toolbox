@@ -1,26 +1,13 @@
-#include <stdio.h>
-
-struct hp_json_stream;
-
-struct hp_json_stream_io {
-  int  (*getc)(struct hp_json_stream_io *io);
-  int  (*putc)(struct hp_json_stream_io *io, char c);
-  char ungotc;
-};
-
-struct hp_json_stream_io *hp_json_stream_io_init(struct hp_json_stream_io *io,
-						 int (*getc)(struct hp_json_stream_io *io),
-						 int (*putc)(struct hp_json_stream_io *io, char c)
-						 );
+#include "hp_stream.h"
 
 struct hp_json_stream {
-  struct hp_json_stream_io *io;
-  struct hp_json_stream    *parent;
-  unsigned                 state, item_cnt;
+  struct hp_stream      *iost;
+  struct hp_json_stream *parent;
+  unsigned              state, item_cnt;
 };
 
-struct hp_json_stream *hp_json_stream_tostring_init(struct hp_json_stream    *st,
-						    struct hp_json_stream_io *io
+struct hp_json_stream *hp_json_stream_tostring_init(struct hp_json_stream *st,
+						    struct hp_stream      *iost
 						    );
 
 int hp_json_int_tostring(struct hp_json_stream *st, int val);
@@ -32,8 +19,8 @@ int hp_json_arr_end_tostring(struct hp_json_stream *ast);
 int hp_json_dict_begin_tostring(struct hp_json_stream *st, struct hp_json_stream *dst);
 int hp_json_dict_end_tostring(struct hp_json_stream *dst);
 
-struct hp_json_stream *hp_json_stream_parse_init(struct hp_json_stream    *st,
-						 struct hp_json_stream_io *io
+struct hp_json_stream *hp_json_stream_parse_init(struct hp_json_stream *st,
+						 struct hp_stream      *iost
 						 );
 
 enum {

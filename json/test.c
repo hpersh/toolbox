@@ -4,29 +4,6 @@
 #include "hp_json.h"
 
 
-struct test_io {
-  struct hp_json_stream_io base[1];
-  FILE                     *fp;
-};
-
-int
-test_io_getc(struct hp_json_stream_io *io)
-{
-  return (fgetc(((struct test_io *) io)->fp));
-}
-
-int
-test_io_putc(struct hp_json_stream_io *io, char c)
-{
-  return (fputc(c, ((struct test_io *) io)->fp));
-}
-
-void
-test_io_init(struct test_io *io, FILE *fp)
-{
-  hp_json_stream_io_init(io->base, test_io_getc, test_io_putc);
-  io->fp = fp;
-}
 
 
 struct test {
@@ -171,15 +148,15 @@ int
 main(void)
 {
   FILE                  *fp;
-  struct test_io        io[1];
+  struct hp_stream_file iost[1];
   struct hp_json_stream st[1];
   int                   n;
 
   fp = fopen("test.json", "w");
   assert(fp != 0);
-  test_io_init(io, fp);
+  hp_stream_file_init(iost, fp);
 
-  hp_json_stream_tostring_init(st, io->base);
+  hp_json_stream_tostring_init(st, iost->base);
 
   test_json_dump(st, test_out);
 
@@ -187,13 +164,18 @@ main(void)
 
   fp = fopen("test.json", "r");
   assert(fp != 0);
-  test_io_init(io, fp);
+  hp_stream_file_init(iost, fp);
 
-  hp_json_stream_parse_init(st, io->base);
+  hp_json_stream_parse_init(st, iost->base);
 
   n = test_json_parse(st, test_in);
 
   assert(n > 0);
+
+  assert(test_in->i == test_out->i);
+  assert(test_in->f == test_out->f);
+  assert(memcmp(test_in->a, test_out->a, sizeof(test_in->a)) == 0);
+  assert(strcmp(test_in->s, test_out->s) == 0);
 
   return (0);
 }

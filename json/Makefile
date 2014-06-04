@@ -1,6 +1,11 @@
+INC	= -I../stream
+
+CFLAGS	= -g
 
 hp_json.o:
-	gcc -g -c hp_json.c
+	gcc $(CFLAGS) $(INC) -c hp_json.c
 
 test: hp_json.o
-	gcc -g hp_json.o test.c
+	gcc $(CFLAGS) $(INC) hp_json.o test.c ../stream/hp_stream.o
+	./a.out
+

@@ -3,60 +3,32 @@
 
 #include "hp_json.h"
 
-
-struct hp_json_stream_io *
-hp_json_stream_io_init(struct hp_json_stream_io * io,
-		       int (*getc)(struct hp_json_stream_io *io),
-		       int (*putc)(struct hp_json_stream_io *io, char c)
-		       )
-{
-  io->getc   = getc;
-  io->putc   = putc;
-  io->ungotc = -1;
-
-  return (io);
-}
-
-static int
+static inline
+int
 hp_json_stream_getc(struct hp_json_stream *st)
 {
-  int c;
-
-  if ((c = st->io->ungotc) > 0) {
-    st->io->ungotc = -1;
-    return (c);
-  }
-
-  return ((*st->io->getc)(st->io));
+  return (hp_stream_getc(st->iost));
 }
 
-static int
+static inline
+int
 hp_json_stream_ungetc(struct hp_json_stream *st, char c)
 {
-  assert(st->io->ungotc == -1);
-
-  st->io->ungotc = c;
-
-  return (1);
+  return (hp_stream_ungetc(st->iost, c));
 }
 
-static int
+static inline
+int
 hp_json_stream_putc(struct hp_json_stream *st, char c)
 {
-  return ((*st->io->putc)(st->io, c));
+  return (hp_stream_putc(st->iost, c));
 }
 
-static int
+static inline
+int
 hp_json_stream_puts(struct hp_json_stream *st, char *s)
 {
-  int  result;
-  char c;
-
-  for (result = 0; c = *s; ++s, ++result) {
-    if (hp_json_stream_putc(st, c) < 0)  return (-1);
-  }
-
-  return (result);
+  return (hp_stream_puts(st->iost, s));
 }
 
 
@@ -68,11 +40,11 @@ enum hp_json_tostring_state {
 };
 
 struct hp_json_stream *
-hp_json_stream_tostring_init(struct hp_json_stream    *st,
-			     struct hp_json_stream_io *io
+hp_json_stream_tostring_init(struct hp_json_stream *st,
+			     struct hp_stream      *iost
 			     )
 {
-  st->io       = io;
+  st->iost     = iost;
   st->parent   = 0;
   st->state    = HP_JSON_TOSTRING_STATE_START;
   st->item_cnt = 0;
@@ -179,7 +151,7 @@ hp_json_arr_begin_tostring(struct hp_json_stream *st, struct hp_json_stream *ast
 
   TRYN(hp_json_tostring_before(st));
 
-  ast->io       = st->io;
+  ast->iost     = st->iost;
   ast->parent   = st;
   ast->state    = HP_JSON_TOSTRING_STATE_ARRAY;
   ast->item_cnt = 0;
@@ -209,7 +181,7 @@ hp_json_dict_begin_tostring(struct hp_json_stream *st, struct hp_json_stream *ds
 
   TRYN(hp_json_tostring_before(st));
 
-  dst->io       = st->io;
+  dst->iost     = st->iost;
   dst->parent   = st;
   dst->state    = HP_JSON_TOSTRING_STATE_DICT_KEY;
   dst->item_cnt = 0;
@@ -398,11 +370,11 @@ hp_json_parse_tok(struct hp_json_stream *st, unsigned *tok, char *tokbuf, unsign
 }
 
 struct hp_json_stream *
-hp_json_stream_parse_init(struct hp_json_stream    *st,
-			  struct hp_json_stream_io *io
+hp_json_stream_parse_init(struct hp_json_stream *st,
+			  struct hp_stream      *iost
 			  )
 {
-  st->io       = io;
+  st->iost     = iost;
   st->parent   = 0;
   st->state    = HP_JSON_PARSE_STATE_OBJ;
   st->item_cnt = 0;
@@ -433,7 +405,7 @@ hp_json_parse(struct hp_json_stream   *st,
 
   case HP_JSON_PARSE_TOK_LSQBR:
     cst->parent   = st;
-    cst->io       = st->io;
+    cst->iost       = st->iost;
     cst->state    = HP_JSON_PARSE_STATE_ARRAY_OBJ;
     cst->item_cnt = 0;
 
@@ -469,7 +441,7 @@ hp_json_parse(struct hp_json_stream   *st,
     
   case HP_JSON_PARSE_TOK_LBR:
     cst->parent   = st;
-    cst->io       = st->io;
+    cst->iost       = st->iost;
     cst->state    = HP_JSON_PARSE_STATE_DICT_KEY;
     cst->item_cnt = 0;
 
