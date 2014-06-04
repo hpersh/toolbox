@@ -6,6 +6,7 @@ struct hp_stream {
   int (*putc)(struct hp_stream *, char);
   int (*tell)(struct hp_stream *);
   int (*seek)(struct hp_stream *, int, int);
+  int (*eof)(struct hp_stream *);
 };
 
 struct hp_stream *hp_stream_init(struct hp_stream *st, 
@@ -13,7 +14,8 @@ struct hp_stream *hp_stream_init(struct hp_stream *st,
 				 int (*ungetc)(struct hp_stream *, char),
 				 int (*putc)(struct hp_stream *, char),
 				 int (*tell)(struct hp_stream *),
-				 int (*seek)(struct hp_stream *, int, int)
+				 int (*seek)(struct hp_stream *, int, int),
+				 int (*eof)(struct hp_stream *)
 				 );
 
 static inline
@@ -34,6 +36,7 @@ int hp_stream_putc(struct hp_stream *st, char c)
   return ((*st->putc)(st, c));
 }
 
+int hp_stream_gets(struct hp_stream *st, char *buf, unsigned bufsize);
 int hp_stream_puts(struct hp_stream *st, char *s);
 
 static inline
@@ -46,6 +49,12 @@ static inline
 int hp_stream_seek(struct hp_stream *st, int ofs, int whence)
 {
   return ((*st->seek)(st, ofs, whence));
+}
+
+static inline
+int hp_stream_eof(struct hp_stream *st)
+{
+  return ((*st->eof)(st));
 }
 
 struct hp_stream_file {

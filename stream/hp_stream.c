@@ -1,3 +1,5 @@
+#include <assert.h>
+
 #include "hp_stream.h"
 
 struct hp_stream *
@@ -6,7 +8,8 @@ hp_stream_init(struct hp_stream *st,
 	       int (*ungetc)(struct hp_stream *, char),
 	       int (*putc)(struct hp_stream *, char),
 	       int (*tell)(struct hp_stream *),
-	       int (*seek)(struct hp_stream *, int, int)
+	       int (*seek)(struct hp_stream *, int, int),
+	       int (*eof)(struct hp_stream *)
 	       )
 {
   st->getc   = getc;
@@ -14,8 +17,27 @@ hp_stream_init(struct hp_stream *st,
   st->putc   = putc;
   st->tell   = tell;
   st->seek   = seek;
+  st->eof    = eof;
 
   return (st);
+}
+
+int
+hp_stream_gets(struct hp_stream *st, char *buf, unsigned bufsize)
+{
+  int  result;
+  char c;
+
+  assert(bufsize > 0);
+
+  for (--bufsize, result = 0; result < bufsize; ++result) {
+    c = hp_stream_getc(st);
+    if (c < 0)  break;
+    *buf++ = c;
+  }
+
+  *buf = 0;
+  return (result);
 }
 
 int
@@ -61,6 +83,12 @@ hp_stream_file_seek(struct hp_stream *st, int ofs, int whence)
   return (fseek(((struct hp_stream_file *) st)->fp, ofs, whence));
 }
 
+static int
+hp_stream_file_eof(struct hp_stream *st)
+{
+  return (feof(((struct hp_stream_file *) st)->fp));
+}
+
 struct hp_stream_file *
 hp_stream_file_init(struct hp_stream_file *st, FILE *fp)
 {
@@ -69,7 +97,8 @@ hp_stream_file_init(struct hp_stream_file *st, FILE *fp)
 		 hp_stream_file_ungetc,
 		 hp_stream_file_putc,
 		 hp_stream_file_tell,
-		 hp_stream_file_seek
+		 hp_stream_file_seek,
+		 hp_stream_file_eof
 		 );
 
   st->fp = fp;
@@ -143,6 +172,14 @@ hp_stream_buf_seek(struct hp_stream *st, int ofs, int whence)
   return (stb->ofs = nofs);
 }
 
+static int
+hp_stream_buf_eof(struct hp_stream *st)
+{
+  struct hp_stream_buf *stb = (struct hp_stream_buf *) st;
+
+  return (stb->ofs >= stb->bufsize);
+}
+
 struct hp_stream_buf *
 hp_stream_buf_init(struct hp_stream_buf *st, char *buf, unsigned bufsize)
 {
@@ -151,7 +188,8 @@ hp_stream_buf_init(struct hp_stream_buf *st, char *buf, unsigned bufsize)
 		 hp_stream_buf_ungetc,
 		 hp_stream_buf_putc,
 		 hp_stream_buf_tell,
-		 hp_stream_buf_seek
+		 hp_stream_buf_seek,
+		 hp_stream_buf_eof
 		 );
 
   st->buf     = buf;
