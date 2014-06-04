@@ -363,7 +363,7 @@ hp_tlv_parse_sax_bytes(struct hp_tlv_stream *st, unsigned data_len, unsigned cha
 {
   unsigned n, val;
 
-  if ((data_len & 1) == 1 && (n = data_len >> 1) > bytes_size)  return (-1);
+  if ((data_len & 1) != 0 || (n = data_len >> 1) > bytes_size)  return (-1);
 
   for ( ; n; --n, ++bytes) {
     if (tlv_stream_uint_get(st, 2, &val) < 0)  return (-1);
@@ -379,7 +379,7 @@ hp_tlv_parse_sax_words(struct hp_tlv_stream *st, unsigned data_len, unsigned sho
 {
   unsigned n, val;
 
-  if ((data_len & 1) == 1 && (n = data_len >> 2) > words_size)  return (-1);
+  if ((data_len & 3) != 0 || (n = data_len >> 2) > words_size)  return (-1);
 
   for ( ; n; --n, ++words) {
     if (tlv_stream_uint_get(st, 4, &val) < 0)  return (-1);
@@ -395,7 +395,7 @@ hp_tlv_parse_sax_dwords(struct hp_tlv_stream *st, unsigned data_len, unsigned lo
 {
   unsigned n, val;
 
-  if ((data_len & 1) == 1 && (n = data_len >> 3) > dwords_size)  return (-1);
+  if ((data_len & 7) != 0 || (n = data_len >> 3) > dwords_size)  return (-1);
 
   for ( ; n; --n, ++dwords) {
     if (tlv_stream_uint_get(st, 8, &val) < 0)  return (-1);
@@ -413,7 +413,7 @@ hp_tlv_parse_sax_qwords(struct hp_tlv_stream *st, unsigned data_len, unsigned lo
   unsigned long long val;
   char               data_buf[16 + 1];
 
-  if ((data_len & 1) == 1 && (n = data_len >> 4) > qwords_size)  return (-1);
+  if ((data_len & 0xf) != 0 || (n = data_len >> 4) > qwords_size)  return (-1);
 
   for ( ; n; --n, ++qwords) {
     if (tlv_stream_gets(st, data_buf, 16) < 0)  return (-1);
