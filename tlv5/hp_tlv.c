@@ -15,72 +15,8 @@ enum {
 };
 
 
-void
-hp_tlv_stream_init(struct hp_tlv_stream *st,
-		   int (*putc)(struct hp_tlv_stream *st, char c),
-		   int (*getc)(struct hp_tlv_stream *st),
-		   int (*tell)(struct hp_tlv_stream *st, unsigned *ofs),
-		   int (*seek)(struct hp_tlv_stream *st, unsigned ofs)
-		   )
-{
-  st->putc = putc;
-  st->getc = getc;
-  st->tell = tell;
-  st->seek = seek;
-}
-
 static int
-tlv_stream_putc(struct hp_tlv_stream *st, char c)
-{
-  return ((*st->putc)(st, c) < 0 ? -1 : 1);
-}
-
-static int
-tlv_stream_puts(struct hp_tlv_stream *st, char *p, unsigned n)
-{
-  unsigned nn;
-  
-  for (nn = n; nn; --nn, ++p) {
-    if (tlv_stream_putc(st, *p) < 0)  return (-1);
-  }
-
-  return (n);
-}
-
-static int
-tlv_stream_getc(struct hp_tlv_stream *st)
-{
-  return ((*st->getc)(st) < 0 ? -1 : 1);
-}
-
-static int
-tlv_stream_gets(struct hp_tlv_stream *st, char *p, unsigned n)
-{
-  unsigned nn;
-  int      c;
-
-  for (nn = n; nn; --nn, ++p) {
-    if ((c = (*st->getc)(st)) < 0)  return (-1);
-    *p = c;
-  }
-
-  return (n);
-}
-
-static int
-tlv_stream_tell(struct hp_tlv_stream *st, unsigned *ofs)
-{
-  return ((*st->tell)(st, ofs));
-}
-
-static int
-tlv_stream_seek(struct hp_tlv_stream *st, unsigned ofs)
-{
-  return ((*st->seek)(st, ofs));
-}
-
-static int
-tlv_stream_uint_put(struct hp_tlv_stream *st, unsigned n, unsigned val)
+tlv_stream_uint_put(struct hp_stream *st, unsigned n, unsigned val)
 {
   char buf[9], *p;
   int  nn;
@@ -88,24 +24,24 @@ tlv_stream_uint_put(struct hp_tlv_stream *st, unsigned n, unsigned val)
   assert(n < ARRAY_SIZE(buf));
 
   sprintf(buf, "%08x", val);
-  return (tlv_stream_puts(st, buf + 8 - n, n));
+
+  return (hp_stream_puts(st, buf + 8 - n));
 }
 
 static int
-tlv_stream_uint_get(struct hp_tlv_stream *st, unsigned n, unsigned *val)
+tlv_stream_uint_get(struct hp_stream *st, unsigned n, unsigned *val)
 {
   char buf[9];
 
   assert(n < ARRAY_SIZE(buf));
 
-  if (tlv_stream_gets(st, buf, n) < 0)  return (-1);
-  buf[n] = 0;
+  if (hp_stream_gets(st, buf, n + 1) < 0)  return (-1);
 
   return (sscanf(buf, "%x", val) == 1 ? n : -1);
 }
 
 static int
-tlv_hdr_put(struct hp_tlv_stream *st, unsigned type, unsigned data_len)
+tlv_hdr_put(struct hp_stream *st, unsigned type, unsigned data_len)
 {
   assert(type < (1 << HP_TLV_HDR_TYPE_BITS));
   assert(data_len < (1 << HP_TLV_HDR_LEN_BITS));
@@ -114,7 +50,7 @@ tlv_hdr_put(struct hp_tlv_stream *st, unsigned type, unsigned data_len)
 }
 
 static int
-tlv_hdr_get(struct hp_tlv_stream *st, unsigned *type, unsigned *data_len)
+tlv_hdr_get(struct hp_stream *st, unsigned *type, unsigned *data_len)
 {
   int      n;
   unsigned h;
@@ -129,20 +65,20 @@ tlv_hdr_get(struct hp_tlv_stream *st, unsigned *type, unsigned *data_len)
 
 
 int
-hp_tlv_tostring_nil(struct hp_tlv_stream *st, unsigned type)
+hp_tlv_tostring_nil(struct hp_stream *st, unsigned type)
 {
   return (tlv_hdr_put(st, type, 0));
 }
 
 
 int
-hp_tlv_tostring_bool(struct hp_tlv_stream *st, unsigned type, unsigned val)
+hp_tlv_tostring_bool(struct hp_stream *st, unsigned type, unsigned val)
 {
   int result, n;
 
   if ((n = tlv_hdr_put(st, type, 1)) < 0)  return (-1);
   result = n;
-  if ((n = tlv_stream_putc(st, val ? 'T' : 'F')) < 0)  return (-1);
+  if ((n = hp_stream_putc(st, val ? 'T' : 'F')) < 0)  return (-1);
   result += n;
       
   return (result);
@@ -150,7 +86,7 @@ hp_tlv_tostring_bool(struct hp_tlv_stream *st, unsigned type, unsigned val)
 
 
 int
-hp_tlv_tostring_int(struct hp_tlv_stream *st, unsigned type, int val)
+hp_tlv_tostring_int(struct hp_stream *st, unsigned type, int val)
 {
   int      result, n;
   char     data_buf[32];
@@ -161,7 +97,7 @@ hp_tlv_tostring_int(struct hp_tlv_stream *st, unsigned type, int val)
 
   if ((n = tlv_hdr_put(st, type, data_len)) < 0)  return (-1);
   result = n;
-  if ((n = tlv_stream_puts(st, data_buf, data_len)) < 0)  return (-1);
+  if ((n = hp_stream_puts(st, data_buf)) < 0)  return (-1);
   result += n;
 
   return (result);
@@ -169,7 +105,7 @@ hp_tlv_tostring_int(struct hp_tlv_stream *st, unsigned type, int val)
 
 
 int
-hp_tlv_tostring_float(struct hp_tlv_stream *st, unsigned type, double val)
+hp_tlv_tostring_float(struct hp_stream *st, unsigned type, double val)
 {
   int      result, n;
   char     data_buf[32];
@@ -180,7 +116,7 @@ hp_tlv_tostring_float(struct hp_tlv_stream *st, unsigned type, double val)
 
   if ((n = tlv_hdr_put(st, type, data_len)) < 0)  return (-1);
   result = n;
-  if ((n = tlv_stream_puts(st, data_buf, data_len)) < 0)  return (-1);
+  if ((n = hp_stream_puts(st, data_buf)) < 0)  return (-1);
   result += n;
 
   return (result);
@@ -188,14 +124,14 @@ hp_tlv_tostring_float(struct hp_tlv_stream *st, unsigned type, double val)
 
 
 int
-hp_tlv_tostring_string(struct hp_tlv_stream *st, unsigned type, char *s)
+hp_tlv_tostring_string(struct hp_stream *st, unsigned type, char *s)
 {
   int      result, n;
   unsigned data_len = strlen(s);
 
   if ((n = tlv_hdr_put(st, type, data_len)) < 0)  return (-1);
   result = n;
-  if ((n = tlv_stream_puts(st, s, data_len)) < 0)  return (-1);
+  if ((n = hp_stream_puts(st, s)) < 0)  return (-1);
   result += n;
 
   return (result);
@@ -203,7 +139,7 @@ hp_tlv_tostring_string(struct hp_tlv_stream *st, unsigned type, char *s)
 
 
 int
-hp_tlv_tostring_bytes(struct hp_tlv_stream *st, unsigned type, unsigned char *bytes, unsigned bytes_len)
+hp_tlv_tostring_bytes(struct hp_stream *st, unsigned type, unsigned char *bytes, unsigned bytes_len)
 {
   int result, n;
 
@@ -219,7 +155,7 @@ hp_tlv_tostring_bytes(struct hp_tlv_stream *st, unsigned type, unsigned char *by
 
 
 int
-hp_tlv_tostring_words(struct hp_tlv_stream *st, unsigned type, unsigned short *words, unsigned words_len)
+hp_tlv_tostring_words(struct hp_stream *st, unsigned type, unsigned short *words, unsigned words_len)
 {
   int result, n;
 
@@ -235,7 +171,7 @@ hp_tlv_tostring_words(struct hp_tlv_stream *st, unsigned type, unsigned short *w
 
 
 int
-hp_tlv_tostring_dwords(struct hp_tlv_stream *st, unsigned type, unsigned long *dwords, unsigned dwords_len)
+hp_tlv_tostring_dwords(struct hp_stream *st, unsigned type, unsigned long *dwords, unsigned dwords_len)
 {
   int result, n;
 
@@ -251,7 +187,7 @@ hp_tlv_tostring_dwords(struct hp_tlv_stream *st, unsigned type, unsigned long *d
 
 
 int
-hp_tlv_tostring_qwords(struct hp_tlv_stream *st, unsigned type, unsigned long long *qwords, unsigned qwords_len)
+hp_tlv_tostring_qwords(struct hp_stream *st, unsigned type, unsigned long long *qwords, unsigned qwords_len)
 {
   int      result, n;
   char     data_buf[16 + 1];
@@ -260,7 +196,7 @@ hp_tlv_tostring_qwords(struct hp_tlv_stream *st, unsigned type, unsigned long lo
   result = n;
   for (; qwords_len; --qwords_len, ++qwords) {
     sprintf(data_buf, "%016llx", *qwords);
-    if ((n = tlv_stream_puts(st, data_buf, 16)) < 0)  return (-1);
+    if ((n = hp_stream_puts(st, data_buf)) < 0)  return (-1);
     result += n;
   }
 
@@ -269,46 +205,46 @@ hp_tlv_tostring_qwords(struct hp_tlv_stream *st, unsigned type, unsigned long lo
 
 
 int
-hp_tlv_tostring_list_begin(struct hp_tlv_stream *st, unsigned type, unsigned *hofs)
+hp_tlv_tostring_list_begin(struct hp_stream *st, unsigned type, unsigned *hofs)
 {
-  if (tlv_stream_tell(st, hofs) < 0)  return (-1);
+  *hofs = hp_stream_tell(st);
 
   return (tlv_hdr_put(st, type, 0));
 }
 
 
 int
-hp_tlv_tostring_list_end(struct hp_tlv_stream *st, unsigned type, unsigned hofs)
+hp_tlv_tostring_list_end(struct hp_stream *st, unsigned type, unsigned hofs)
 {
   unsigned ofs, otype, odata_len;
 
-  return (tlv_stream_tell(st, &ofs) < 0
-	  || tlv_stream_seek(st, hofs) < 0
+  return ((ofs = hp_stream_tell(st)) < 0
+	  || hp_stream_seek(st, hofs, SEEK_SET) < 0
 	  || tlv_hdr_get(st, &otype, &odata_len) < 0
 	  || type != otype
-	  || tlv_stream_seek(st, hofs) < 0
+	  || hp_stream_seek(st, hofs, SEEK_SET) < 0
 	  || tlv_hdr_put(st, type, ofs - (hofs + HP_TLV_HDR_CHARS)) < 0
-	  || tlv_stream_seek(st, ofs) < 0
+	  || hp_stream_seek(st, ofs, SEEK_SET) < 0
 	  ? -1 : 0
 	  );
 }
 
 
 int
-hp_tlv_parse_sax_hdr(struct hp_tlv_stream *st, unsigned *type, unsigned *data_len)
+hp_tlv_parse_sax_hdr(struct hp_stream *st, unsigned *type, unsigned *data_len)
 {
   return (tlv_hdr_get(st, type, data_len));
 }
 
 
 int
-hp_tlv_parse_sax_bool(struct hp_tlv_stream *st, unsigned data_len, unsigned *val)
+hp_tlv_parse_sax_bool(struct hp_stream *st, unsigned data_len, unsigned *val)
 {
   char c;
 
   if (data_len != 1)  return (-1);
 
-  if ((c = tlv_stream_getc(st)) < 0)  return (-1);
+  if ((c = hp_stream_getc(st)) < 0)  return (-1);
 
   *val = (c == 'T');
 
@@ -317,7 +253,7 @@ hp_tlv_parse_sax_bool(struct hp_tlv_stream *st, unsigned data_len, unsigned *val
 
 
 int
-hp_tlv_parse_sax_int(struct hp_tlv_stream *st, unsigned data_len, hp_tlv_intval *val)
+hp_tlv_parse_sax_int(struct hp_stream *st, unsigned data_len, hp_tlv_intval *val)
 {
   char data_buf[32];
   
@@ -325,14 +261,14 @@ hp_tlv_parse_sax_int(struct hp_tlv_stream *st, unsigned data_len, hp_tlv_intval 
 
   assert(data_len < ARRAY_SIZE(data_buf));
 
-  if (tlv_stream_gets(st, data_buf, data_len) < 0)  return (-1);
+  if (hp_stream_gets(st, data_buf, data_len + 1) < 0)  return (-1);
   data_buf[data_len] = 0;
   return (sscanf(data_buf, HP_TLV_FMT_INT, val) == 1 ? data_len : -1);
 }
 
 
 int
-hp_tlv_parse_sax_float(struct hp_tlv_stream *st, unsigned data_len, hp_tlv_floatval *val)
+hp_tlv_parse_sax_float(struct hp_stream *st, unsigned data_len, hp_tlv_floatval *val)
 {
   char data_buf[32];
   
@@ -340,18 +276,18 @@ hp_tlv_parse_sax_float(struct hp_tlv_stream *st, unsigned data_len, hp_tlv_float
 
   assert(data_len < ARRAY_SIZE(data_buf));
 
-  if (tlv_stream_gets(st, data_buf, data_len) < 0)  return (-1);
+  if (hp_stream_gets(st, data_buf, data_len + 1) < 0)  return (-1);
   data_buf[data_len] = 0;
   return (sscanf(data_buf, HP_TLV_FMT_FLOAT, val) == 1 ? data_len : -1);
 }
 
 
 int
-hp_tlv_parse_sax_string(struct hp_tlv_stream *st, unsigned data_len, char *strbuf, unsigned strbuf_size)
+hp_tlv_parse_sax_string(struct hp_stream *st, unsigned data_len, char *strbuf, unsigned strbuf_size)
 {
   if (data_len >= strbuf_size)  return (-1);
 
-  if (tlv_stream_gets(st, strbuf, data_len) < 0)  return (-1);
+  if (hp_stream_gets(st, strbuf, data_len + 1) < 0)  return (-1);
   strbuf[data_len] = 0;
 
   return (data_len);
@@ -359,7 +295,7 @@ hp_tlv_parse_sax_string(struct hp_tlv_stream *st, unsigned data_len, char *strbu
 
 
 int
-hp_tlv_parse_sax_bytes(struct hp_tlv_stream *st, unsigned data_len, unsigned char *bytes, unsigned bytes_size)
+hp_tlv_parse_sax_bytes(struct hp_stream *st, unsigned data_len, unsigned char *bytes, unsigned bytes_size)
 {
   unsigned n, val;
 
@@ -375,7 +311,7 @@ hp_tlv_parse_sax_bytes(struct hp_tlv_stream *st, unsigned data_len, unsigned cha
 
 
 int
-hp_tlv_parse_sax_words(struct hp_tlv_stream *st, unsigned data_len, unsigned short *words, unsigned words_size)
+hp_tlv_parse_sax_words(struct hp_stream *st, unsigned data_len, unsigned short *words, unsigned words_size)
 {
   unsigned n, val;
 
@@ -391,7 +327,7 @@ hp_tlv_parse_sax_words(struct hp_tlv_stream *st, unsigned data_len, unsigned sho
 
 
 int
-hp_tlv_parse_sax_dwords(struct hp_tlv_stream *st, unsigned data_len, unsigned long *dwords, unsigned dwords_size)
+hp_tlv_parse_sax_dwords(struct hp_stream *st, unsigned data_len, unsigned long *dwords, unsigned dwords_size)
 {
   unsigned n, val;
 
@@ -407,7 +343,7 @@ hp_tlv_parse_sax_dwords(struct hp_tlv_stream *st, unsigned data_len, unsigned lo
 
 
 int
-hp_tlv_parse_sax_qwords(struct hp_tlv_stream *st, unsigned data_len, unsigned long long *qwords, unsigned qwords_size)
+hp_tlv_parse_sax_qwords(struct hp_stream *st, unsigned data_len, unsigned long long *qwords, unsigned qwords_size)
 {
   unsigned           n;
   unsigned long long val;
@@ -416,7 +352,7 @@ hp_tlv_parse_sax_qwords(struct hp_tlv_stream *st, unsigned data_len, unsigned lo
   if ((data_len & 0xf) != 0 || (n = data_len >> 4) > qwords_size)  return (-1);
 
   for ( ; n; --n, ++qwords) {
-    if (tlv_stream_gets(st, data_buf, 16) < 0)  return (-1);
+    if (hp_stream_gets(st, data_buf, sizeof(data_buf)) < 0)  return (-1);
     data_buf[16] = 0;
     if (sscanf(data_buf, "%016llx", &val) != 1)  return (-1);
     *qwords = val;

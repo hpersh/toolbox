@@ -102,7 +102,7 @@ enum {
   do { if ((n = (x)) < 0)  return (-1);  result += n; } while (0)
 
 int
-test_tlv_tostring(struct hp_tlv_stream *st, struct test *t)
+test_tlv_tostring(struct hp_stream *st, struct test *t)
 {
   int result = 0, n;
   unsigned li_hofs, arr_hofs, i;
@@ -127,7 +127,7 @@ test_tlv_tostring(struct hp_tlv_stream *st, struct test *t)
   do { if ((y) > (x))  return (-1);  (x) -= (y); } while (0)
 
 int
-test_tlv_parse_sax(struct hp_tlv_stream *st, struct test *t)
+test_tlv_parse_sax(struct hp_stream *st, struct test *t)
 {
   int      result = 0, n;
   unsigned type, data_len, i, li_rem, pr_rem, arr_rem;
@@ -208,109 +208,6 @@ struct test t1[1] = {
   42, 3.1415, "foo", { 1, 2, 3, 5, 7, 11, 13, 17, 19, 23 }
 }, t2[1];
 
-struct test_stream_buf {
-  hp_tlv_stream base;
-  char          *buf;
-  unsigned      bufsize, ofs;
-};
-
-int
-test_stream_buf_putc(struct hp_tlv_stream *st, char c)
-{
-  struct test_stream_buf *p = (struct test_stream_buf *) st;
-
-  if (p->ofs >= p->bufsize)  return (-1);
-
-  p->buf[p->ofs++] = c;
-
-  return (0);
-}
-
-int
-test_stream_buf_getc(struct hp_tlv_stream *st)
-{
-  struct test_stream_buf *p = (struct test_stream_buf *) st;
-
-  if (p->ofs >= p->bufsize)  return (-1);
-
-  return (p->buf[p->ofs++]);
-}
-
-int
-test_stream_buf_tell(struct hp_tlv_stream *st, unsigned *ofs)
-{
-  struct test_stream_buf *p = (struct test_stream_buf *) st;
-
-  *ofs = p->ofs;
-  
-  return (0);
-}
-
-int
-test_stream_buf_seek(struct hp_tlv_stream *st, unsigned ofs)
-{
-  struct test_stream_buf *p = (struct test_stream_buf *) st;
-
-  return (p->ofs = ofs);
-}
-
-void
-test_stream_buf_init(struct test_stream_buf *ts, char *buf, unsigned bufsize)
-{
-  hp_tlv_stream_init(ts->base, test_stream_buf_putc, test_stream_buf_getc, test_stream_buf_tell, test_stream_buf_seek);
-  ts->buf     = buf;
-  ts->bufsize = bufsize;
-  test_stream_buf_seek(ts->base, 0);
-}
-
-struct test_stream_file {
-  hp_tlv_stream base;
-  FILE          *fp;
-};
-
-int
-test_stream_file_putc(struct hp_tlv_stream *st, char c)
-{
-  struct test_stream_file *p = (struct test_stream_file *) st;
-
-  fputc(c, p->fp);
-
-  return (1);
-}
-
-int
-test_stream_file_getc(struct hp_tlv_stream *st)
-{
-  struct test_stream_file *p = (struct test_stream_file *) st;
-
-  return (fgetc(p->fp));
-}
-
-int
-test_stream_file_tell(struct hp_tlv_stream *st, unsigned *ofs)
-{
-  struct test_stream_file *p = (struct test_stream_file *) st;
-
-  *ofs = ftell(p->fp);
-  
-  return (0);
-}
-
-int
-test_stream_file_seek(struct hp_tlv_stream *st, unsigned ofs)
-{
-  struct test_stream_file *p = (struct test_stream_file *) st;
-
-  return (fseek(p->fp, ofs, SEEK_SET));
-}
-
-void
-test_stream_file_init(struct test_stream_file *ts, FILE *fp)
-{
-  hp_tlv_stream_init(ts->base, test_stream_file_putc, test_stream_file_getc, test_stream_file_tell, test_stream_file_seek);
-  ts->fp = fp;
-  test_stream_file_seek(ts->base, 0);
-}
 
 
 char test_buf[1024];
@@ -321,35 +218,35 @@ char test_buf[1024];
 int
 main(void)
 {
-  int                     result, oresult;
-  struct test_stream_buf  tsb[1];
-  struct test_stream_file tsf[1];
-  FILE                    *fp;
+  int                   result, oresult;
+  struct hp_stream_buf  sb[1];
+  FILE                  *fp;
+  struct hp_stream_file sf[1];
 
-  test_stream_buf_init(tsb, test_buf, sizeof(test_buf));
+  hp_stream_buf_init(sb, test_buf, sizeof(test_buf));
 
-  CHECK(test_tlv_tostring(tsb->base, t1));
+  CHECK(test_tlv_tostring(sb->base, t1));
   assert(result == 116);
 
-  dump(test_buf, tsb->ofs);
+  dump(test_buf, sb->ofs);
   printf("\n");
 
-  test_stream_buf_init(tsb, test_buf, sizeof(test_buf));
+  hp_stream_buf_init(sb, test_buf, sizeof(test_buf));
 
-  CHECK(test_tlv_parse_sax(tsb->base, t2));
+  CHECK(test_tlv_parse_sax(sb->base, t2));
   assert(result == 116);
 
   fp = fopen("/tmp/test.out", "w+");
   if (fp == 0)  perror("");
 
-  test_stream_file_init(tsf, fp);
+  hp_stream_file_init(sf, fp);
 
-  CHECK(test_tlv_tostring(tsf->base, t1));
+  CHECK(test_tlv_tostring(sf->base, t1));
   assert(result == 116);
 
-  test_stream_file_init(tsf, fp);
+  hp_stream_seek(sf->base, 0, SEEK_SET);
 
-  CHECK(test_tlv_parse_sax(tsf->base, t2));
+  CHECK(test_tlv_parse_sax(sf->base, t2));
   assert(result == 116);
 
   return (0);

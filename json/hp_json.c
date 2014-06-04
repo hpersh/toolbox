@@ -60,10 +60,10 @@ hp_json_tostring_before(struct hp_json_stream *st)
   switch (st->state) {
   case HP_JSON_TOSTRING_STATE_ARRAY:
   case HP_JSON_TOSTRING_STATE_DICT_KEY:
-    if (st->item_cnt > 0)  result = hp_json_stream_putc(st, ',');
+    if (st->item_cnt > 0)  result = hp_json_stream_puts(st, ",");
     break;
   case HP_JSON_TOSTRING_STATE_DICT_VAL:
-    result = hp_json_stream_putc(st, ':');
+    result = hp_json_stream_puts(st, ":");
   default:
     ;
   }
@@ -92,7 +92,7 @@ hp_json_tostring_after(struct hp_json_stream *st)
 }
 
 #define TRY(x)   do { if ((x) < 0)  return (-1); } while (0)
-#define TRYN(x)  do { if ((n = (x)) < 0)  return (-1);   result += n; } while (0)
+#define TRYN(x)  do { if ((n = (x)) < 0)  return (-1);  result += n; } while (0)
 
 #define HP_JSON_NUM_TOSTRING(_bufsize, _fmt)			  \
   int  n, result = 0;						  \
