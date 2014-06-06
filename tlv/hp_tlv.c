@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <assert.h>
 
+#include "shared/hp_common.h"
 #include "hp_tlv.h"
 
 
@@ -15,838 +16,332 @@ enum {
 };
 
 
-static struct hp_tlv_node *
-tlv_node_new(enum hp_tlv_type type)
+struct hp_tlv_stream *
+hp_tlv_stream_init(struct hp_tlv_stream *st, struct hp_stream *iost)
 {
-  struct hp_tlv_node *result;
+  st->parent  = 0;
+  st->iost    = iost;
+  st->hdr_ofs = 0;
 
-  if (result = CALLOC_T(struct hp_tlv_node, 1)) {
-    HP_LIST_INIT(result->siblings);
-    result->type = type;
-  }
-
-  return (result);
+  return (st);
 }
 
-
-struct hp_tlv_node *
-hp_tlv_node_new(enum hp_tlv_type type, ...)
-{
-  struct hp_tlv_node *result;
-
-  if (result = tlv_node_new(type)) {
-    va_list            ap;
-
-    va_start(ap, type);
-    
-    switch (type) {
-    case HP_TLV_TYPE_NIL:
-      break;
-    case HP_TLV_TYPE_BOOL:
-      result->val.boolval = (va_arg(ap, unsigned) != 0);
-      break;
-    case HP_TLV_TYPE_INT:
-      result->val.intval = va_arg(ap, hp_tlv_intval);
-      break;
-    case HP_TLV_TYPE_FLOAT:
-      result->val.floatval = va_arg(ap, hp_tlv_floatval);
-      break;
-    case HP_TLV_TYPE_STRING:
-      result->val.strval = strdup(va_arg(ap, char *));
-      break;
-    case HP_TLV_TYPE_BYTES:
-      result->val.bytesval.len = va_arg(ap, unsigned);
-      if ((result->val.bytesval.data = malloc(result->val.bytesval.len)) == 0) {
-	free(result);
-	result = 0;
-      }
-
-      memcpy(result->val.bytesval.data, va_arg(ap, unsigned char *), result->val.bytesval.len);
-      break;
-    case HP_TLV_TYPE_WORDS:
-      {
-	unsigned n;
-
-	result->val.wordsval.len = va_arg(ap, unsigned);
-	n = result->val.wordsval.len << 1;
-	if ((result->val.wordsval.data = malloc(n)) == 0) {
-	  free(result);
-	  result = 0;
-	}
-	
-	memcpy(result->val.wordsval.data, va_arg(ap, unsigned char *), n);
-      }
-      break;
-    case HP_TLV_TYPE_DWORDS:
-      {
-	unsigned n;
-
-	result->val.dwordsval.len = va_arg(ap, unsigned);
-	n = result->val.dwordsval.len << 2;
-	if ((result->val.dwordsval.data = malloc(n)) == 0) {
-	  free(result);
-	  result = 0;
-	}
-	
-	memcpy(result->val.dwordsval.data, va_arg(ap, unsigned char *), n);
-      }
-      break;
-    case HP_TLV_TYPE_QWORDS:
-      {
-	unsigned n;
-
-	result->val.qwordsval.len = va_arg(ap, unsigned);
-	n = result->val.qwordsval.len << 3;
-	if ((result->val.qwordsval.data = malloc(n)) == 0) {
-	  free(result);
-	  result = 0;
-	}
-	
-	memcpy(result->val.qwordsval.data, va_arg(ap, unsigned char *), n);
-      }
-      break;
-    case HP_TLV_TYPE_LIST:
-      HP_LIST_INIT(result->val.listval);
-      break;
-    default:
-      assert(0);
-    }
-    
-    va_end(ap);
-  }
-
-  return (result);
-}
-
-
-void
-hp_tlv_node_delete(struct hp_tlv_node *nd)
-{
-  switch (nd->type) {
-  case HP_TLV_TYPE_NIL:
-  case HP_TLV_TYPE_BOOL:
-  case HP_TLV_TYPE_INT:
-  case HP_TLV_TYPE_FLOAT:
-    break;
-  case HP_TLV_TYPE_STRING:
-    free(nd->val.strval);
-    break;
-  case HP_TLV_TYPE_BYTES:
-    free(nd->val.bytesval.data);
-    break;
-  case HP_TLV_TYPE_WORDS:
-    free(nd->val.wordsval.data);
-    break;
-  case HP_TLV_TYPE_DWORDS:
-    free(nd->val.dwordsval.data);
-    break;
-  case HP_TLV_TYPE_QWORDS:
-    free(nd->val.qwordsval.data);
-    break;
-  case HP_TLV_TYPE_LIST:
-    {
-      struct hp_list *p;
-
-      while ((p = HP_LIST_FIRST(nd->val.listval)) != HP_LIST_END(nd->val.listval)) {
-	hp_list_erase(p);
-	hp_tlv_node_delete(FIELD_PTR_TO_STRUCT_PTR(p, struct hp_tlv_node, siblings));
-      }
-    }
-    break;
-  default:
-    assert(0);
-  }
-
-  free(nd);
-}
-
-
-struct hp_tlv_node *
-hp_tlv_node_child_insert(struct hp_tlv_node *nd, struct hp_tlv_node *parent, struct hp_list *before)
-{
-  assert(parent->type == HP_TLV_TYPE_LIST);
-
-  hp_list_insert(nd->siblings, before);
-  nd->parent = parent;
-
-  return (nd);
-}
-
-
-struct hp_tlv_node *
-hp_tlv_node_child_append(struct hp_tlv_node *nd, struct hp_tlv_node *parent)
-{
-  return (hp_tlv_node_child_insert(nd, parent, HP_LIST_END(parent->val.listval)));
-}
-
-
-struct hp_tlv_node *
-hp_tlv_node_erase(struct hp_tlv_node *nd)
-{
-  hp_list_erase(nd->siblings);
-
-  nd->parent = 0;
-  HP_LIST_INIT(nd->siblings);
-}
-
-
-struct hp_tlv_node *
-hp_tlv_node_parent(struct hp_tlv_node *nd)
-{
-  return (nd->parent);
-}
-
-
-struct hp_tlv_node *
-hp_tlv_node_children(struct hp_tlv_node *nd)
-{
-  struct hp_list *p;
-
-  if  (nd->type != HP_TLV_TYPE_LIST)  return (0);
-  p = HP_LIST_FIRST(nd->val.listval);
-  if (p == HP_LIST_END(nd->val.listval))  return (0);
-  return (FIELD_PTR_TO_STRUCT_PTR(p, struct hp_tlv_node, siblings));
-}
-
-
-struct hp_tlv_node *
-hp_tlv_node_prev(struct hp_tlv_node *nd)
-{
-  struct hp_tlv_node *p;
-  struct hp_list *q;
-
-  if ((p = nd->parent) == 0)  return (0);
-  q = HP_LIST_PREV(nd->siblings);
-  if (q == HP_LIST_END(p->val.listval))  return (0);
-  return (FIELD_PTR_TO_STRUCT_PTR(q, struct hp_tlv_node, siblings));
-}
-
-
-struct hp_tlv_node *
-hp_tlv_node_next(struct hp_tlv_node *nd)
-{
-  struct hp_tlv_node *p;
-  struct hp_list *q;
-
-  if ((p = nd->parent) == 0)  return (0);
-  q = HP_LIST_NEXT(nd->siblings);
-  if (q == HP_LIST_END(p->val.listval))  return (0);
-  return (FIELD_PTR_TO_STRUCT_PTR(q, struct hp_tlv_node, siblings));
-}
-
-
-void
-hp_tlv_stream_init(struct hp_tlv_stream *st, unsigned len, unsigned char *buf)
-{
-  st->buf  = buf;
-  st->size = len;
-  st->ofs  = 0;
-}
-
-static unsigned 
-tlv_stream_ofs(struct hp_tlv_stream *st)
-{
-  return (st->ofs);
-}
-
-static unsigned
-tlv_stream_rem(struct hp_tlv_stream *st)
-{
-  return (st->size - st->ofs);
-}
-
-unsigned
-hp_tlv_stream_eof(struct hp_tlv_stream *st)
-{
-  return (tlv_stream_rem(st) == 0);
-}
 
 static int
-tlv_stream_chk(struct hp_tlv_stream *st, unsigned len)
+tlv_stream_uint_put(struct hp_stream *st, unsigned n, unsigned val)
 {
-  return ((st->ofs + len) <= st->size ? 0 : -1);
-}
+  char buf[9], *p;
+  int  nn;
 
-static void
-tlv_stream_adv(struct hp_tlv_stream *st, unsigned len)
-{
-  st->ofs += len;
-}
-
-static unsigned char *
-tlv_stream_ptr(struct hp_tlv_stream *st)
-{
-  return (st->buf + st->ofs);
-}
-
-static void
-tlv_stream_uint_put(struct hp_tlv_stream *st, unsigned n, unsigned val)
-{
-  char buf[9];
+  assert(n < ARRAY_SIZE(buf));
 
   sprintf(buf, "%08x", val);
-  memcpy(tlv_stream_ptr(st), buf + 8 - n, n);
+
+  return (hp_stream_puts(st, buf + 8 - n));
 }
 
 static int
-tlv_stream_uint_get(struct hp_tlv_stream *st, unsigned n, unsigned *val)
+tlv_stream_uint_get(struct hp_stream *st, unsigned n, unsigned *val)
 {
   char buf[9];
 
-  memcpy(buf, tlv_stream_ptr(st), n);
-  buf[n] = 0;
+  assert(n < ARRAY_SIZE(buf));
 
-  return (sscanf(buf, "%x", val) == 1 ? 0 : -1);
+  if (hp_stream_gets(st, buf, n + 1) < 0)  return (-1);
+
+  return (sscanf(buf, "%x", val) == 1 ? n : -1);
 }
 
 static int
-tlv_hdr_put(struct hp_tlv_stream *st, unsigned type, unsigned data_len)
+tlv_hdr_put(struct hp_stream *st, unsigned type, unsigned data_len)
 {
-  if (type >= (1 << HP_TLV_HDR_TYPE_BITS)
-      || data_len >= (1 << HP_TLV_HDR_LEN_BITS)
-      || tlv_stream_chk(st, HP_TLV_HDR_CHARS + data_len) < 0
-      )  return (-1);
-
-  tlv_stream_uint_put(st, HP_TLV_HDR_CHARS, (type << HP_TLV_HDR_LEN_BITS) | data_len);
-  tlv_stream_adv(st, HP_TLV_HDR_CHARS);
-
-  return (0);
+  assert(type < (1 << HP_TLV_HDR_TYPE_BITS));
+  assert(data_len < (1 << HP_TLV_HDR_LEN_BITS));
+  
+  return (tlv_stream_uint_put(st, HP_TLV_HDR_CHARS, (type << HP_TLV_HDR_LEN_BITS) | data_len));
 }
 
 static int
-tlv_hdr_get(struct hp_tlv_stream *st, unsigned *type, unsigned *data_len)
+tlv_hdr_get(struct hp_stream *st, unsigned *type, unsigned *data_len)
 {
+  int      n;
   unsigned h;
-
-  if (tlv_stream_chk(st, HP_TLV_HDR_CHARS) < 0)  return (-1);
-  tlv_stream_uint_get(st, HP_TLV_HDR_CHARS, &h);
+  
+  if ((n = tlv_stream_uint_get(st, HP_TLV_HDR_CHARS, &h)) < 0)  return (-1);
+  
   *type     = h >> HP_TLV_HDR_LEN_BITS;
   *data_len = h & ((1 << HP_TLV_HDR_LEN_BITS) - 1);
-
-  tlv_stream_adv(st, HP_TLV_HDR_CHARS);
-
-  return (tlv_stream_chk(st, *data_len));
+  
+  return (n);
 }
 
 
 int
-hp_tlv_tostring_nil(struct hp_tlv_stream *st)
+hp_tlv_tostring_nil(struct hp_tlv_stream *st, unsigned type)
 {
-  return (tlv_hdr_put(st, HP_TLV_TYPE_NIL, 0));
+  return (tlv_hdr_put(st->iost, type, 0));
 }
 
 
 int
-hp_tlv_tostring_bool(struct hp_tlv_stream *st, unsigned val)
+hp_tlv_tostring_int(struct hp_tlv_stream *st, unsigned type, int val)
 {
-  if (tlv_hdr_put(st, HP_TLV_TYPE_BOOL, 1) < 0)  return (-1);
-  *tlv_stream_ptr(st) = val ? 'T' : 'F';
-  tlv_stream_adv(st, 1);
-
-  return (0);  
-}
-
-
-int
-hp_tlv_tostring_int(struct hp_tlv_stream *st, int val)
-{
+  int      result, n;
   char     data_buf[32];
   unsigned data_len;
   
   sprintf(data_buf, HP_TLV_FMT_INT, val);
   data_len = strlen(data_buf);
 
-  if (tlv_hdr_put(st, HP_TLV_TYPE_INT, data_len) < 0)  return (-1);
-  memcpy(tlv_stream_ptr(st), data_buf, data_len);
-  tlv_stream_adv(st, data_len);
-
-  return (0);  
-}
-
-
-int
-hp_tlv_tostring_float(struct hp_tlv_stream *st, double val)
-{
-  char     data_buf[32];
-  unsigned data_len;
-  
-  sprintf(data_buf, HP_TLV_FMT_FLOAT, val);
-  data_len = strlen(data_buf);
-
-  if (tlv_hdr_put(st, HP_TLV_TYPE_FLOAT, data_len) < 0)  return (-1);
-  memcpy(tlv_stream_ptr(st), data_buf, data_len);
-  tlv_stream_adv(st, data_len);
-
-  return (0);  
-}
-
-
-int
-hp_tlv_tostring_string(struct hp_tlv_stream *st, char *s)
-{
-  unsigned data_len = strlen(s);
-
-  if (tlv_hdr_put(st, HP_TLV_TYPE_STRING, data_len) < 0)  return (-1);
-  memcpy(tlv_stream_ptr(st), s, data_len);
-  tlv_stream_adv(st, data_len);
-
-  return (0);  
-}
-
-
-int
-hp_tlv_tostring_bytes(struct hp_tlv_stream *st, unsigned bytes_len, unsigned char *bytes)
-{
-  unsigned data_len = 2 * bytes_len;
-  char     data_buf[2 + 1], *p;
-
-  if (tlv_hdr_put(st, HP_TLV_TYPE_BYTES, data_len) < 0)  return (-1);
-  for (p = tlv_stream_ptr(st); bytes_len; --bytes_len, ++bytes, p += 2) {
-    sprintf(data_buf, "%02x", *bytes);
-    memcpy(p, data_buf, 2);
-  }
-  tlv_stream_adv(st, data_len);
-
-  return (0);  
-}
-
-
-int
-hp_tlv_tostring_words(struct hp_tlv_stream *st, unsigned words_len, unsigned short *words)
-{
-  unsigned data_len = 4 * words_len;
-  char     data_buf[4 + 1], *p;
-
-  if (tlv_hdr_put(st, HP_TLV_TYPE_WORDS, data_len) < 0)  return (-1);
-  for (p = tlv_stream_ptr(st); words_len; --words_len, ++words, p += 4) {
-    sprintf(data_buf, "%04x", *words);
-    memcpy(p, data_buf, 4);
-  }
-  tlv_stream_adv(st, data_len);
-
-  return (0);  
-}
-
-
-int
-hp_tlv_tostring_dwords(struct hp_tlv_stream *st, unsigned dwords_len, unsigned long *dwords)
-{
-  unsigned data_len = 8 * dwords_len;
-  char     data_buf[8 + 1], *p;
-
-  if (tlv_hdr_put(st, HP_TLV_TYPE_DWORDS, data_len) < 0)  return (-1);
-  for (p = tlv_stream_ptr(st); dwords_len; --dwords_len, ++dwords, p += 8) {
-    sprintf(data_buf, "%08lx", *dwords);
-    memcpy(p, data_buf, 8);
-  }
-  tlv_stream_adv(st, data_len);
-
-  return (0);  
-}
-
-
-int
-hp_tlv_tostring_qwords(struct hp_tlv_stream *st, unsigned qwords_len, unsigned long long *qwords)
-{
-  unsigned data_len = 16 * qwords_len;
-  char     data_buf[16 + 1], *p;
-
-  if (tlv_hdr_put(st, HP_TLV_TYPE_QWORDS, data_len) < 0)  return (-1);
-  for (p = tlv_stream_ptr(st); qwords_len; --qwords_len, ++qwords, p += 16) {
-    sprintf(data_buf, "%016llx", *qwords);
-    memcpy(p, data_buf, 16);
-  }
-  tlv_stream_adv(st, data_len);
-
-  return (0);  
-}
-
-
-int
-hp_tlv_tostring_list_begin(struct hp_tlv_stream *st, struct hp_tlv_stream *sub)
-{
-  if (tlv_stream_chk(st, HP_TLV_HDR_CHARS) < 0)  return (-1);
-
-  hp_tlv_stream_init(sub, tlv_stream_rem(st) - HP_TLV_HDR_CHARS, tlv_stream_ptr(st) + HP_TLV_HDR_CHARS);
-
-  return (0);
-}
-
-
-int
-hp_tlv_tostring_list_end(struct hp_tlv_stream *st, struct hp_tlv_stream *sub)
-{
-  unsigned data_len = tlv_stream_ofs(sub);
-
-  if (tlv_hdr_put(st, HP_TLV_TYPE_LIST, data_len) < 0)  return (-1);
-
-  tlv_stream_adv(st, data_len);
-
-  return (0);
-}
-
-
-int
-hp_tlv_tostring_node(struct hp_tlv_stream *st, struct hp_tlv_node *nd)
-{
-  switch (nd->type) {
-  case HP_TLV_TYPE_NIL:
-    return (hp_tlv_tostring_nil(st));
-  case HP_TLV_TYPE_BOOL:
-    return (hp_tlv_tostring_bool(st, nd->val.boolval));
-  case HP_TLV_TYPE_INT:
-    return (hp_tlv_tostring_int(st, nd->val.intval));
-  case HP_TLV_TYPE_FLOAT:
-    return (hp_tlv_tostring_float(st, nd->val.floatval));
-  case HP_TLV_TYPE_STRING:
-    return (hp_tlv_tostring_string(st, nd->val.strval));
-  case HP_TLV_TYPE_BYTES:
-    return (hp_tlv_tostring_bytes(st, nd->val.bytesval.len, nd->val.bytesval.data));
-  case HP_TLV_TYPE_WORDS:
-    return (hp_tlv_tostring_words(st, nd->val.wordsval.len, nd->val.wordsval.data));
-  case HP_TLV_TYPE_DWORDS:
-    return (hp_tlv_tostring_dwords(st, nd->val.dwordsval.len, nd->val.dwordsval.data));
-  case HP_TLV_TYPE_QWORDS:
-    return (hp_tlv_tostring_qwords(st, nd->val.qwordsval.len, nd->val.qwordsval.data));
-  case HP_TLV_TYPE_LIST:
-    {
-      hp_tlv_stream  sub;
-      struct hp_list *p;
-
-      if (hp_tlv_tostring_list_begin(st, sub) < 0)  return (-1);
-
-      for (p = HP_LIST_FIRST(nd->val.listval); p != HP_LIST_END(nd->val.listval); p = HP_LIST_NEXT(p)) {
-	if (hp_tlv_tostring_node(sub, FIELD_PTR_TO_STRUCT_PTR(p, struct hp_tlv_node, siblings)) < 0)  return (-1);
-      }
-      
-      return (hp_tlv_tostring_list_end(st, sub));
-    }
-  default:
-    assert(0);
-  }
-
-  return (-1);
-}
-
-
-int
-hp_tlv_tostring(unsigned bufsize, char *buf, struct hp_tlv_node *nd)
-{
-  int                  result;
-  struct hp_tlv_stream st[1];
-
-  hp_tlv_stream_init(st, bufsize - 1, buf);
-
-  if (hp_tlv_tostring_node(st, nd) < 0)  return (-1);
-
-  result = tlv_stream_ofs(st);
-
-  buf[result] = 0;
+  if ((n = tlv_hdr_put(st->iost, type, data_len)) < 0)  return (-1);
+  result = n;
+  if ((n = hp_stream_puts(st->iost, data_buf)) < 0)  return (-1);
+  result += n;
 
   return (result);
 }
 
 
 int
-hp_tlv_parse_sax(struct hp_tlv_stream *st, enum hp_tlv_type *type, unsigned *data_len, char **pdata)
+hp_tlv_tostring_float(struct hp_tlv_stream *st, unsigned type, double val)
 {
-  if (tlv_hdr_get(st, type, data_len) < 0)  return (-1);
+  int      result, n;
+  char     data_buf[32];
+  unsigned data_len;
+  
+  sprintf(data_buf, HP_TLV_FMT_FLOAT, val);
+  data_len = strlen(data_buf);
 
-  *pdata = tlv_stream_ptr(st);
+  if ((n = tlv_hdr_put(st->iost, type, data_len)) < 0)  return (-1);
+  result = n;
+  if ((n = hp_stream_puts(st->iost, data_buf)) < 0)  return (-1);
+  result += n;
 
-  tlv_stream_adv(st, *data_len);
-
-  return (0);
+  return (result);
 }
 
 
 int
-hp_tlv_parse_sax_bool(unsigned data_len, char *data, unsigned *val)
+hp_tlv_tostring_string(struct hp_tlv_stream *st, unsigned type, char *s)
 {
-  if (data_len != 1)  return (-1);
+  int      result, n;
+  unsigned data_len = strlen(s);
 
-  *val = (*data == 'T');
+  if ((n = tlv_hdr_put(st->iost, type, data_len)) < 0)  return (-1);
+  result = n;
+  if ((n = hp_stream_puts(st->iost, s)) < 0)  return (-1);
+  result += n;
 
-  return (0);
+  return (result);
 }
 
 
 int
-hp_tlv_parse_sax_int(unsigned data_len, char *data, hp_tlv_intval *val)
+hp_tlv_tostring_bytes(struct hp_tlv_stream *st, unsigned type, unsigned char *bytes, unsigned bytes_len)
+{
+  int result, n;
+
+  if ((n = tlv_hdr_put(st->iost, type, 2 * bytes_len)) < 0)  return (-1);
+  result = n;
+  for ( ; bytes_len; --bytes_len, ++bytes) {
+    if ((n = tlv_stream_uint_put(st->iost, 2, *bytes)) < 0)  return (-1);
+    result += n;
+  }
+
+  return (result);
+}
+
+
+int
+hp_tlv_tostring_words(struct hp_tlv_stream *st, unsigned type, unsigned short *words, unsigned words_len)
+{
+  int result, n;
+
+  if ((n = tlv_hdr_put(st->iost, type, 4 * words_len)) < 0)  return (-1);
+  result = n;
+  for ( ; words_len; --words_len, ++words) {
+    if ((n = tlv_stream_uint_put(st->iost, 4, *words)) < 0)  return (-1);
+    result += n;
+  }
+
+  return (result);
+}
+
+
+int
+hp_tlv_tostring_dwords(struct hp_tlv_stream *st, unsigned type, unsigned long *dwords, unsigned dwords_len)
+{
+  int result, n;
+
+  if ((n = tlv_hdr_put(st->iost, type, 8 * dwords_len)) < 0)  return (-1);
+  result = n;
+  for ( ; dwords_len; --dwords_len, ++dwords) {
+    if ((n = tlv_stream_uint_put(st->iost, 8, *dwords)) < 0)  return (-1);
+    result += n;
+  }
+
+  return (result);
+}
+
+
+int
+hp_tlv_tostring_qwords(struct hp_tlv_stream *st, unsigned type, unsigned long long *qwords, unsigned qwords_len)
+{
+  int      result, n;
+  char     data_buf[16 + 1];
+
+  if ((n = tlv_hdr_put(st->iost, type, 16 * qwords_len)) < 0)  return (-1);
+  result = n;
+  for (; qwords_len; --qwords_len, ++qwords) {
+    sprintf(data_buf, "%016llx", *qwords);
+    if ((n = hp_stream_puts(st->iost, data_buf)) < 0)  return (-1);
+    result += n;
+  }
+
+  return (result);
+}
+
+
+int
+hp_tlv_tostring_list_begin(struct hp_tlv_stream *st, unsigned type, struct hp_tlv_stream *cst)
+{
+  cst->iost    = st->iost;
+  cst->parent  = st;
+  cst->hdr_ofs = hp_stream_tell(st->iost);
+
+  return (tlv_hdr_put(st->iost, type, 0));
+}
+
+
+int
+hp_tlv_tostring_list_end(struct hp_tlv_stream *st)
+{
+  unsigned cur_ofs, type, odata_len;
+
+  return (st->parent == 0
+	  || (cur_ofs = hp_stream_tell(st->iost)) < 0
+	  || hp_stream_seek(st->iost, st->hdr_ofs, SEEK_SET) < 0
+	  || tlv_hdr_get(st->iost, &type, &odata_len) < 0
+	  || hp_stream_seek(st->iost, st->hdr_ofs, SEEK_SET) < 0
+	  || tlv_hdr_put(st->iost, type, cur_ofs - (st->hdr_ofs + HP_TLV_HDR_CHARS)) < 0
+	  || hp_stream_seek(st->iost, cur_ofs, SEEK_SET) < 0
+	  ? -1 : 0
+	  );
+}
+
+
+int
+hp_tlv_parse_hdr(struct hp_stream *st, unsigned *type, unsigned *data_len)
+{
+  return (tlv_hdr_get(st, type, data_len));
+}
+
+
+int
+hp_tlv_parse_int(struct hp_stream *st, unsigned data_len, hp_tlv_intval *val)
 {
   char data_buf[32];
   
   if (data_len == 0)  return (-1);
 
-  memcpy(data_buf, data, data_len);
+  assert(data_len < ARRAY_SIZE(data_buf));
+
+  if (hp_stream_gets(st, data_buf, data_len + 1) < 0)  return (-1);
   data_buf[data_len] = 0;
-  return (sscanf(data_buf, HP_TLV_FMT_INT, val) == 1 ? 0 : -1);
+  return (sscanf(data_buf, HP_TLV_FMT_INT, val) == 1 ? data_len : -1);
 }
 
 
 int
-hp_tlv_parse_sax_float(unsigned data_len, char *data, hp_tlv_floatval *val)
+hp_tlv_parse_float(struct hp_stream *st, unsigned data_len, hp_tlv_floatval *val)
 {
   char data_buf[32];
   
   if (data_len == 0)  return (-1);
 
-  memcpy(data_buf, data, data_len);
+  assert(data_len < ARRAY_SIZE(data_buf));
+
+  if (hp_stream_gets(st, data_buf, data_len + 1) < 0)  return (-1);
   data_buf[data_len] = 0;
-  return (sscanf(data_buf, HP_TLV_FMT_FLOAT, val) == 1 ? 0 : -1);
+  return (sscanf(data_buf, HP_TLV_FMT_FLOAT, val) == 1 ? data_len : -1);
 }
 
 
 int
-hp_tlv_parse_sax_string(unsigned data_len, char *data, unsigned strbuf_size, char *strbuf)
+hp_tlv_parse_string(struct hp_stream *st, unsigned data_len, char *strbuf, unsigned strbuf_size)
 {
-  if ((data_len + 1) > strbuf_size)  return (-1);
+  if (data_len >= strbuf_size)  return (-1);
 
-  memcpy(strbuf, data, data_len);
+  if (hp_stream_gets(st, strbuf, data_len + 1) < 0)  return (-1);
   strbuf[data_len] = 0;
 
-  return (0);
+  return (data_len);
 }
 
 
 int
-hp_tlv_parse_sax_bytes(unsigned data_len, char *data, unsigned bytes_size, unsigned char *bytes)
+hp_tlv_parse_bytes(struct hp_stream *st, unsigned data_len, unsigned char *bytes, unsigned bytes_size)
 {
-  unsigned n, nn, val;
-  char     data_buf[2 + 1];
+  unsigned n, val;
 
-  if ((data_len & 1) == 1)  return (-1);
+  if ((data_len & 1) != 0 || (n = data_len >> 1) > bytes_size)  return (-1);
 
-  n = data_len >> 1;
-  if (n > bytes_size)  return (-1);
-
-  for (data_buf[2] = 0, nn = n; nn; --nn, ++bytes, data += 2) {
-    memcpy(data_buf, data, 2);
-    if (sscanf(data_buf, "%02x", &val) != 1)  return (-1);
+  for ( ; n; --n, ++bytes) {
+    if (tlv_stream_uint_get(st, 2, &val) < 0)  return (-1);
     *bytes = val;
   }
 
-  return (n);
+  return (data_len);
 }
 
 
 int
-hp_tlv_parse_sax_words(unsigned data_len, char *data, unsigned words_size, unsigned short *words)
+hp_tlv_parse_words(struct hp_stream *st, unsigned data_len, unsigned short *words, unsigned words_size)
 {
-  unsigned n, nn, val;
-  char     data_buf[4 + 1];
+  unsigned n, val;
 
-  if ((data_len & 1) == 1)  return (-1);
+  if ((data_len & 3) != 0 || (n = data_len >> 2) > words_size)  return (-1);
 
-  n = data_len >> 2;
-  if (n > words_size)  return (-1);
-
-  for (data_buf[4] = 0, nn = n; nn; --nn, ++words, data += 4) {
-    memcpy(data_buf, data, 4);
-    if (sscanf(data_buf, "%04x", &val) != 1)  return (-1);
+  for ( ; n; --n, ++words) {
+    if (tlv_stream_uint_get(st, 4, &val) < 0)  return (-1);
     *words = val;
   }
 
-  return (n);
+  return (data_len);
 }
 
 
 int
-hp_tlv_parse_sax_dwords(unsigned data_len, char *data, unsigned dwords_size, unsigned long *dwords)
+hp_tlv_parse_dwords(struct hp_stream *st, unsigned data_len, unsigned long *dwords, unsigned dwords_size)
 {
-  unsigned n, nn, val;
-  char     data_buf[8 + 1];
+  unsigned n, val;
 
-  if ((data_len & 1) == 1)  return (-1);
+  if ((data_len & 7) != 0 || (n = data_len >> 3) > dwords_size)  return (-1);
 
-  n = data_len >> 3;
-  if (n > dwords_size)  return (-1);
-
-  for (data_buf[8] = 0, nn = n; nn; --nn, ++dwords, data += 8) {
-    memcpy(data_buf, data, 8);
-    if (sscanf(data_buf, "%08x", &val) != 1)  return (-1);
+  for ( ; n; --n, ++dwords) {
+    if (tlv_stream_uint_get(st, 8, &val) < 0)  return (-1);
     *dwords = val;
   }
 
-  return (n);
+  return (data_len);
 }
 
 
 int
-hp_tlv_parse_sax_qwords(unsigned data_len, char *data, unsigned qwords_size, unsigned long long *qwords)
+hp_tlv_parse_qwords(struct hp_stream *st, unsigned data_len, unsigned long long *qwords, unsigned qwords_size)
 {
-  unsigned           n, nn;
+  unsigned           n;
   unsigned long long val;
   char               data_buf[16 + 1];
 
-  if ((data_len & 1) == 1)  return (-1);
+  if ((data_len & 0xf) != 0 || (n = data_len >> 4) > qwords_size)  return (-1);
 
-  n = data_len >> 4;
-  if (n > qwords_size)  return (-1);
-
-  for (data_buf[16] = 0, nn = n; nn; --nn, ++qwords, data += 16) {
-    memcpy(data_buf, data, 16);
+  for ( ; n; --n, ++qwords) {
+    if (hp_stream_gets(st, data_buf, sizeof(data_buf)) < 0)  return (-1);
+    data_buf[16] = 0;
     if (sscanf(data_buf, "%016llx", &val) != 1)  return (-1);
     *qwords = val;
-  }
+  }    
 
-  return (n);
-}
-
-
-int
-hp_tlv_parse_dom(struct hp_tlv_stream *st, struct hp_tlv_node **nd)
-{
-  unsigned type, data_len;
-  char     *data;
-
-  if (hp_tlv_parse_sax(st, &type, &data_len, &data) < 0)  return (-1);
-
-  switch (type) {
-  case HP_TLV_TYPE_NIL:
-    *nd = hp_tlv_node_new(type);
-    break;
-
-  case HP_TLV_TYPE_BOOL:
-    {
-      unsigned val;
-
-      if (hp_tlv_parse_sax_bool(data_len, data, &val) < 0)  return (-1);
-
-      *nd = hp_tlv_node_new(type, val);
-    }
-    break;
-
-  case HP_TLV_TYPE_INT:
-    {
-      hp_tlv_intval val;
-
-      if (hp_tlv_parse_sax_int(data_len, data, &val) < 0)  return (-1);
-
-      *nd = hp_tlv_node_new(type, val);
-    }
-    break;
-
-  case HP_TLV_TYPE_FLOAT:
-    {
-      hp_tlv_floatval val;
-
-      if (hp_tlv_parse_sax_float(data_len, data, &val) < 0)  return (-1);
-
-      *nd = hp_tlv_node_new(type, val);
-    }
-    break;
-
-  case HP_TLV_TYPE_STRING:
-    {
-      unsigned           bufsize;
-      char               *buf;
-      struct hp_tlv_node *p;
-
-      bufsize = data_len + 1;
-      buf     = malloc(bufsize);
-      if (buf == 0)  return (-1);
-
-      if (hp_tlv_parse_sax_string(data_len, data, bufsize, buf) < 0)  return (-1);
-
-      *nd = p = tlv_node_new(type);
-
-      p->val.strval = buf;
-    }
-    break;
-
-  case HP_TLV_TYPE_BYTES:
-    {
-      unsigned           bufsize;
-      unsigned char      *buf;
-      struct hp_tlv_node *p;
-    
-      bufsize = data_len >> 1;
-      buf = malloc(bufsize);
-      if (buf == 0)  return (-1);
-
-      if (hp_tlv_parse_sax_bytes(data_len, data, bufsize, buf) < 0)  return (-1);
-
-      *nd = p = tlv_node_new(type);
-
-      p->val.bytesval.len  = bufsize;
-      p->val.bytesval.data = buf;
-    }
-    break;
-
-  case HP_TLV_TYPE_WORDS:
-    {
-      unsigned           bufsize;
-      unsigned short     *buf;
-      struct hp_tlv_node *p;
-    
-      bufsize = data_len >> 2;
-      buf = malloc(bufsize << 1);
-      if (buf == 0)  return (-1);
-
-      if (hp_tlv_parse_sax_words(data_len, data, bufsize, buf) < 0)  return (-1);
-
-      *nd = p = tlv_node_new(type);
-
-      p->val.wordsval.len  = bufsize;
-      p->val.wordsval.data = buf;
-    }
-    break;
-
-  case HP_TLV_TYPE_DWORDS:
-    {
-      unsigned           bufsize;
-      unsigned long      *buf;
-      struct hp_tlv_node *p;
-    
-      bufsize = data_len >> 3;
-      buf = malloc(bufsize << 2);
-      if (buf == 0)  return (-1);
-
-      if (hp_tlv_parse_sax_dwords(data_len, data, bufsize, buf) < 0)  return (-1);
-
-      *nd = p = tlv_node_new(type);
-
-      p->val.dwordsval.len  = bufsize;
-      p->val.dwordsval.data = buf;
-    }
-    break;
-
-  case HP_TLV_TYPE_QWORDS:
-    {
-      unsigned           bufsize;
-      unsigned long long *buf;
-      struct hp_tlv_node *p;
-    
-      bufsize = data_len >> 4;
-      buf = malloc(bufsize << 3);
-      if (buf == 0)  return (-1);
-
-      if (hp_tlv_parse_sax_qwords(data_len, data, bufsize, buf) < 0)  return (-1);
-
-      *nd = p = tlv_node_new(type);
-
-      p->val.qwordsval.len  = bufsize;
-      p->val.qwordsval.data = buf;
-    }
-    break;
-
-  case HP_TLV_TYPE_LIST:
-    {
-      struct hp_tlv_node *p, *child;
-      hp_tlv_stream      sub;
-      
-      *nd = p = hp_tlv_node_new(type);
-
-      for (hp_tlv_stream_init(sub, data_len, data); !hp_tlv_stream_eof(sub); ) {
-	if (hp_tlv_parse_dom(sub, &child) < 0)  return (-1);
-	hp_tlv_node_child_append(child, p);
-      }
-    }
-    break;
-  default:
-    assert(0);
-  }
-
-  return (0);
+  return (data_len);
 }

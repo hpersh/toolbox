@@ -1,9 +1,12 @@
+INC	= -I..
+
+CFLAGS	= -g
 
 all:
-	gcc -I.. -g -c hp_tlv.c
+	gcc $(CFLAGS) $(INC) -c hp_tlv.c
 
 
 test:	
-	make -C ../list
-	gcc -g -I.. -D__UNIT_TEST__ hp_tlv.c test.c ../list/hp_list.o
+	make -C ../stream
+	gcc $(CFLAGS) $(INC) -D__UNIT_TEST__ hp_tlv.c test.c ../stream/hp_stream.o
 	./a.out

@@ -11,7 +11,7 @@ typedef double hp_tlv_floatval;
 
 /* Stream formatting parameters */
 enum {
-  HP_TLV_HDR_TYPE_BITS = 4,	/* TLV header type field length, in bits */
+  HP_TLV_HDR_TYPE_BITS = 16,	/* TLV header type field length, in bits */
   HP_TLV_HDR_LEN_BITS  = 8	/* TLV length type field length, in bits */
 };
 
