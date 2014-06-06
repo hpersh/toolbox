@@ -405,7 +405,7 @@ hp_json_parse(struct hp_json_stream   *st,
 
   case HP_JSON_PARSE_TOK_LSQBR:
     cst->parent   = st;
-    cst->iost       = st->iost;
+    cst->iost     = st->iost;
     cst->state    = HP_JSON_PARSE_STATE_ARRAY_OBJ;
     cst->item_cnt = 0;
 
@@ -441,7 +441,7 @@ hp_json_parse(struct hp_json_stream   *st,
     
   case HP_JSON_PARSE_TOK_LBR:
     cst->parent   = st;
-    cst->iost       = st->iost;
+    cst->iost     = st->iost;
     cst->state    = HP_JSON_PARSE_STATE_DICT_KEY;
     cst->item_cnt = 0;
 

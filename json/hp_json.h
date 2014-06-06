@@ -1,4 +1,4 @@
-#include "hp_stream.h"
+#include "stream/hp_stream.h"
 
 struct hp_json_stream {
   struct hp_stream      *iost;

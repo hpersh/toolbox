@@ -1,4 +1,4 @@
-INC	= -I../stream
+INC	= -I..
 
 CFLAGS	= -g
 

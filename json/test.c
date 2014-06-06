@@ -144,29 +144,25 @@ struct test test_out[1] = { {
   } },
   test_in[1];
 
+char buf[1024];
+
 int
 main(void)
 {
   FILE                  *fp;
-  struct hp_stream_file iost[1];
+  struct hp_stream_buf  iost[1];
   struct hp_json_stream st[1];
   int                   n;
 
-  fp = fopen("test.json", "w");
-  assert(fp != 0);
-  hp_stream_file_init(iost, fp);
+  hp_stream_buf_init(iost, buf, sizeof(buf));
 
   hp_json_stream_tostring_init(st, iost->base);
 
   test_json_dump(st, test_out);
 
-  fclose(fp);
+  printf("%s\n", buf);
 
-  fp = fopen("test.json", "r");
-  assert(fp != 0);
-  hp_stream_file_init(iost, fp);
-
-  hp_json_stream_parse_init(st, iost->base);
+  hp_stream_buf_init(iost, buf, hp_stream_tell(iost->base));
 
   n = test_json_parse(st, test_in);
 
