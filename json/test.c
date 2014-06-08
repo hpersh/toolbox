@@ -46,6 +46,8 @@ test_json_dump(struct hp_json_stream *st, struct test *t)
   return (0);
 }
 
+#define TRYN(x)  do { if ((n = (x)) < 0)  return (-1);  result += n; } while (0)
+
 int
 test_json_parse(struct hp_json_stream *st, struct test *t)
 {
@@ -57,15 +59,13 @@ test_json_parse(struct hp_json_stream *st, struct test *t)
   pval->strbuf = strbuf;
   pval->strbufsize = sizeof(strbuf);
 
-  n = hp_json_parse(st, pval, dst);
+  TRYN(hp_json_parse(st, pval, dst));
   assert(n > 0);
-  result += n;
   assert(pval->code == HP_JSON_PARSE_DICT_BEGIN);
   
   for (;;) {
-    n = hp_json_parse(dst, pval, 0);
+    TRYN(hp_json_parse(dst, pval, 0));
     assert(n > 0);
-    result += n;
     
     if (pval->code == HP_JSON_PARSE_DICT_END)  break;
     
