@@ -1,8 +1,8 @@
 #include "stream/hp_stream.h"
 
 struct hp_json_stream {
-  struct hp_stream      *iost;
   struct hp_json_stream *parent;
+  struct hp_stream      *iost;
   unsigned              state, item_cnt;
 };
 
